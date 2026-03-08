@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     prepayment: float = 80.0
     period_in_months: int = 6
     bot_receipt_url: str = ""
+    bot_notify_url: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from config import settings
 from db.models.booking import BookingBase
+from db.models.gift import GiftBase
 from db.models.tariff import Tariff
 from repositories.base import BaseRepository
 from repositories.user_repository import UserRepository
@@ -122,6 +123,12 @@ class BookingRepository(BaseRepository):
 
         if data.promocodeId:
             booking.promocode_id = data.promocodeId
+
+        if data.giftId:
+            booking.gift_id = data.giftId
+            gift = self.session.get(GiftBase, data.giftId)
+            if gift:
+                gift.is_done = True
 
         self.session.add(booking)
         self.session.flush()  # get booking.id

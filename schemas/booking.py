@@ -43,6 +43,7 @@ class BookingCreateRequest(BaseModel):
     # Tariff
     tariff: str  # frontend string ID, e.g. "incognito-daily"
     giftCertificateCode: Optional[str] = None
+    giftId: Optional[int] = None
 
     # Guests
     guestCount: int
@@ -97,11 +98,11 @@ class BookingCreateRequest(BaseModel):
 
     @property
     def has_white_bedroom(self) -> bool:
-        return self.bedroomType == "white"
+        return self.hasExtraBedroom or self.bedroomType == "white"
 
     @property
     def has_green_bedroom(self) -> bool:
-        return self.bedroomType == "green"
+        return self.hasExtraBedroom or self.bedroomType == "green"
 
 
 class BookingCreateResponse(BaseModel):

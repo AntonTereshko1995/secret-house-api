@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
-from routers import bookings, promocodes
+from routers import bookings, gifts, promocodes
 
 app = FastAPI(
     title="Secret House API",
@@ -27,6 +27,7 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 app.include_router(bookings.router, prefix="/api/bookings", tags=["bookings"])
 app.include_router(promocodes.router, prefix="/api/promocodes", tags=["promocodes"])
+app.include_router(gifts.router, prefix="/api/gifts", tags=["gifts"])
 
 
 # ---------------------------------------------------------------------------

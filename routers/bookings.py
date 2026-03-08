@@ -84,6 +84,15 @@ def create_booking(body: BookingCreateRequest, session: DbSession):
             detail="Не удалось создать бронирование. Попробуйте позже.",
         ) from exc
 
+    # Notify bot only when no receipt is expected (gift cert fully covers the booking)
+    no_receipt_expected = body.giftId and (body.prepaymentPrice or 0) == 0
+    if settings.bot_notify_url and no_receipt_expected:
+        try:
+            import requests as _req
+            _req.post(settings.bot_notify_url, json={"booking_id": booking.id}, timeout=5)
+        except Exception:
+            pass
+
     return BookingCreateResponse(
         bookingId=booking.id,
         message=(
