@@ -2,7 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
+from logger import setup_logger
 from routers import bookings, gifts, promocodes
+
+setup_logger()
 
 app = FastAPI(
     title="Secret House API",

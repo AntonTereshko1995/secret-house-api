@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     period_in_months: int = 6
     bot_receipt_url: str = ""
     bot_notify_url: str = ""
+    better_stack_token: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
