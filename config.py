@@ -1,8 +1,17 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     database_url: str
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def fix_database_url(cls, v: str) -> str:
+        v = str(v).strip().strip('"').strip("'")
+        if v.startswith("postgres://"):
+            v = "postgresql://" + v[len("postgres://"):]
+        return v
     debug: bool = False
     allowed_origins: str = "http://localhost:5173,http://localhost:3000"
     prepayment: float = 80.0
