@@ -2,9 +2,8 @@ import json
 from datetime import date
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import settings
 from db.models.promocode import PromocodeBase
 from repositories.base import BaseRepository
 from schemas.booking import TARIFF_ID_TO_INT
@@ -14,10 +13,10 @@ PROMOCODE_TYPE_USAGE_PERIOD = 2
 
 
 class PromocodeRepository(BaseRepository):
-    def __init__(self, session: Session):
+    def __init__(self, session: AsyncSession):
         super().__init__(session)
 
-    def validate(
+    async def validate(
         self,
         name: str,
         booking_date: date,
@@ -29,7 +28,7 @@ class PromocodeRepository(BaseRepository):
         Returns:
             (is_valid, message, discount_percentage, promocode_id)
         """
-        promo = self.session.scalar(
+        promo = await self.session.scalar(
             select(PromocodeBase).where(
                 PromocodeBase.name == name.lower(),
                 PromocodeBase.is_active == True,  # noqa: E712

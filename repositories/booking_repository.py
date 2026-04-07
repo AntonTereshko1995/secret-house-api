@@ -1,8 +1,8 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Sequence
 
-from sqlalchemy import and_, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from db.models.booking import BookingBase
@@ -10,11 +10,11 @@ from db.models.gift import GiftBase
 from db.models.tariff import Tariff
 from repositories.base import BaseRepository
 from repositories.user_repository import UserRepository
-from schemas.booking import BookingCreateRequest, TARIFF_ID_TO_INT
+from schemas.booking import BookingCreateRequest
 
 
 class BookingRepository(BaseRepository):
-    def __init__(self, session: Session):
+    def __init__(self, session: AsyncSession):
         super().__init__(session)
         self.user_repo = UserRepository(session)
 
@@ -22,20 +22,20 @@ class BookingRepository(BaseRepository):
     # Read
     # ------------------------------------------------------------------
 
-    def get_by_id(self, booking_id: int) -> BookingBase | None:
-        """Return a single booking by primary key, with user eagerly loaded."""
-        return self.session.scalar(
+    async def get_by_id(self, booking_id: int) -> BookingBase | None:
+        """Return a single booking by primary key."""
+        return await self.session.scalar(
             select(BookingBase).where(BookingBase.id == booking_id)
         )
 
-    def save_receipt_file_id(self, booking_id: int, file_id: str) -> None:
+    async def save_receipt_file_id(self, booking_id: int, file_id: str) -> None:
         """Persist the Telegram file_id of the payment receipt."""
-        booking = self.session.get(BookingBase, booking_id)
+        booking = await self.session.get(BookingBase, booking_id)
         if booking:
             booking.receipt_file_id = file_id
-            self.session.commit()
+            await self.session.commit()
 
-    def get_booked_periods(
+    async def get_booked_periods(
         self,
         from_date: date | None = None,
         to_date: date | None = None,
@@ -58,17 +58,17 @@ class BookingRepository(BaseRepository):
             query = query.where(BookingBase.start_date <= to_dt)
 
         query = query.order_by(BookingBase.start_date)
-        return self.session.scalars(query).all()
+        result = await self.session.scalars(query)
+        return result.all()
 
-    def is_available(self, start: datetime, end: datetime) -> bool:
+    async def is_available(self, start: datetime, end: datetime) -> bool:
         """Return True if the requested interval has no conflicts."""
-        # Strip timezone to match naive datetimes stored in DB
         if start.tzinfo is not None:
             start = start.replace(tzinfo=None)
         if end.tzinfo is not None:
             end = end.replace(tzinfo=None)
 
-        overlap = self.session.scalar(
+        overlap = await self.session.scalar(
             select(BookingBase).where(
                 and_(
                     BookingBase.is_canceled == False,      # noqa: E712
@@ -85,17 +85,16 @@ class BookingRepository(BaseRepository):
     # Write
     # ------------------------------------------------------------------
 
-    def create_booking(self, data: BookingCreateRequest) -> BookingBase:
+    async def create_booking(self, data: BookingCreateRequest) -> BookingBase:
         """
         Create a new booking from the web wizard form.
         The booking starts as unpaid (is_prepaymented=False).
         The Telegram bot can pick it up and complete the payment flow.
         """
-        # Normalize datetimes (strip timezone info)
         start_date = data.checkInDate.replace(tzinfo=None)
         end_date = data.checkOutDate.replace(tzinfo=None)
 
-        user = self.user_repo.get_or_create_user(
+        user = await self.user_repo.get_or_create_user(
             contact=data.contact,
             user_name=data.telegram or data.phone,
         )
@@ -126,14 +125,14 @@ class BookingRepository(BaseRepository):
 
         if data.giftId:
             booking.gift_id = data.giftId
-            gift = self.session.get(GiftBase, data.giftId)
+            gift = await self.session.get(GiftBase, data.giftId)
             if gift:
                 gift.is_done = True
 
         self.session.add(booking)
-        self.session.flush()  # get booking.id
+        await self.session.flush()  # get booking.id
 
-        self.user_repo.increment_booking_count(user.id)
-        self.session.commit()
-        self.session.refresh(booking)
+        await self.user_repo.increment_booking_count(user.id)
+        await self.session.commit()
+        await self.session.refresh(booking)
         return booking

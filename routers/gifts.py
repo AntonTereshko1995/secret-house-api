@@ -4,14 +4,14 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import get_session
 from db.models.gift import GiftBase
 
 router = APIRouter()
 
-DbSession = Annotated[Session, Depends(get_session)]
+DbSession = Annotated[AsyncSession, Depends(get_session)]
 
 # Maps Tariff enum int values → frontend string IDs
 TARIFF_INT_TO_STR: dict[int, str] = {
@@ -38,12 +38,12 @@ class GiftValidateResponse(BaseModel):
 
 
 @router.get("/validate", response_model=GiftValidateResponse)
-def validate_gift_code(code: str = Query(...), session: DbSession = None):
+async def validate_gift_code(code: str = Query(...), session: DbSession = None):
     """
     Validate a gift certificate code.
     Returns tariff and included options so the frontend can pre-fill the booking wizard.
     """
-    gift = session.scalar(
+    gift = await session.scalar(
         select(GiftBase).where(
             (GiftBase.code == code.strip().upper())
             & (GiftBase.is_paymented == True)  # noqa: E712

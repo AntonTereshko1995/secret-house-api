@@ -1,8 +1,9 @@
 from datetime import date, datetime, timedelta
 from typing import Annotated
 
+import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from db.database import get_session
@@ -17,11 +18,11 @@ from schemas.booking import (
 
 router = APIRouter()
 
-DbSession = Annotated[Session, Depends(get_session)]
+DbSession = Annotated[AsyncSession, Depends(get_session)]
 
 
 @router.get("/periods", response_model=list[BookedPeriodResponse])
-def get_booked_periods(
+async def get_booked_periods(
     session: DbSession,
     from_date: date = Query(
         default_factory=lambda: date.today(),
@@ -37,7 +38,7 @@ def get_booked_periods(
     Used by the frontend calendar to mark unavailable dates.
     """
     repo = BookingRepository(session)
-    bookings = repo.get_booked_periods(from_date=from_date, to_date=to_date)
+    bookings = await repo.get_booked_periods(from_date=from_date, to_date=to_date)
     return [
         BookedPeriodResponse(
             checkIn=b.start_date,
@@ -49,10 +50,10 @@ def get_booked_periods(
 
 
 @router.post("/check-availability", response_model=AvailabilityResponse)
-def check_availability(body: AvailabilityRequest, session: DbSession):
+async def check_availability(body: AvailabilityRequest, session: DbSession):
     """Check whether a proposed booking interval is free."""
     repo = BookingRepository(session)
-    available = repo.is_available(body.startDatetime, body.endDatetime)
+    available = await repo.is_available(body.startDatetime, body.endDatetime)
     return AvailabilityResponse(available=available)
 
 
@@ -61,7 +62,7 @@ def check_availability(body: AvailabilityRequest, session: DbSession):
     response_model=BookingCreateResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_booking(body: BookingCreateRequest, session: DbSession):
+async def create_booking(body: BookingCreateRequest, session: DbSession):
     """
     Submit a new booking from the web wizard.
     The booking is saved as unpaid (is_prepaymented=False).
@@ -70,14 +71,14 @@ def create_booking(body: BookingCreateRequest, session: DbSession):
     repo = BookingRepository(session)
 
     # Final availability check before saving
-    if not repo.is_available(body.checkInDate, body.checkOutDate):
+    if not await repo.is_available(body.checkInDate, body.checkOutDate):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Выбранное время уже занято. Пожалуйста, выберите другую дату.",
         )
 
     try:
-        booking = repo.create_booking(body)
+        booking = await repo.create_booking(body)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -88,8 +89,11 @@ def create_booking(body: BookingCreateRequest, session: DbSession):
     no_receipt_expected = body.giftId and (body.prepaymentPrice or 0) == 0
     if settings.bot_notify_url and no_receipt_expected:
         try:
-            import requests as _req
-            _req.post(settings.bot_notify_url, json={"booking_id": booking.id}, timeout=5)
+            async with httpx.AsyncClient(timeout=5) as client:
+                await client.post(
+                    settings.bot_notify_url,
+                    json={"booking_id": booking.id},
+                )
         except Exception:
             pass
 
@@ -113,7 +117,7 @@ async def upload_receipt(
     Forwards it to the bot's HTTP endpoint which sends it to the admin Telegram chat.
     """
     repo = BookingRepository(session)
-    if not repo.get_by_id(booking_id):
+    if not await repo.get_by_id(booking_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Бронирование не найдено")
 
     if not settings.bot_receipt_url:
@@ -123,7 +127,6 @@ async def upload_receipt(
     filename = file.filename or "receipt"
     content_type = file.content_type or "application/octet-stream"
 
-    import httpx
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(
             settings.bot_receipt_url,
@@ -132,6 +135,6 @@ async def upload_receipt(
         )
 
     if response.status_code == 200 and response.json().get("file_id"):
-        repo.save_receipt_file_id(booking_id, response.json()["file_id"])
+        await repo.save_receipt_file_id(booking_id, response.json()["file_id"])
 
     return {"ok": True, "bookingId": booking_id}

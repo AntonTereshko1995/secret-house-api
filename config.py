@@ -1,17 +1,20 @@
 import os
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-def _get_database_url() -> str:
-    url = os.getenv("DATABASE_URL", "")
-    url = url.strip().strip('"').strip("'")
-    if url.startswith("postgres://"):
-        url = "postgresql://" + url[len("postgres://"):]
-    return url
-
-
 class Settings(BaseSettings):
-    database_url: str = _get_database_url()
+    database_url: str = ""
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, v: str) -> str:
+        v = v.strip().strip('"').strip("'")
+        if v.startswith("postgres://"):
+            v = "postgresql://" + v[len("postgres://"):]
+        if v.startswith("postgresql://"):
+            v = "postgresql+asyncpg://" + v[len("postgresql://"):]
+        return v
     debug: bool = False
     allowed_origins: str = "http://localhost:5173,http://localhost:3000"
     prepayment: float = 80.0

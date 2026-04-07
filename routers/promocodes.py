@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import get_session
 from repositories.promocode_repository import PromocodeRepository
@@ -9,17 +9,17 @@ from schemas.promocode import PromoValidateRequest, PromoValidateResponse
 
 router = APIRouter()
 
-DbSession = Annotated[Session, Depends(get_session)]
+DbSession = Annotated[AsyncSession, Depends(get_session)]
 
 
 @router.post("/validate", response_model=PromoValidateResponse)
-def validate_promocode(body: PromoValidateRequest, session: DbSession):
+async def validate_promocode(body: PromoValidateRequest, session: DbSession):
     """
     Validate a promocode for the given booking date and tariff.
     Returns validity, discount percentage, and a user-facing message.
     """
     repo = PromocodeRepository(session)
-    is_valid, message, discount_pct, promo_id = repo.validate(
+    is_valid, message, discount_pct, promo_id = await repo.validate(
         name=body.code,
         booking_date=body.bookingDate,
         tariff_str=body.tariff,

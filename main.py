@@ -1,16 +1,27 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
+from db.database import engine
 from logger import setup_logger
 from routers import bookings, gifts, promocodes
 
 setup_logger()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    await engine.dispose()
+
+
 app = FastAPI(
     title="Secret House API",
     description="REST API for the Secret House web booking form",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # ---------------------------------------------------------------------------
@@ -37,5 +48,5 @@ app.include_router(gifts.router, prefix="/api/gifts", tags=["gifts"])
 # Health check
 # ---------------------------------------------------------------------------
 @app.get("/health", tags=["health"])
-def health_check():
+async def health_check():
     return {"status": "ok"}
