@@ -85,7 +85,7 @@ class BookingCreateRequest(BaseModel):
     def contact(self) -> str:
         """Returns the primary contact identifier."""
         if self.contactType == "telegram" and self.telegram:
-            return self.telegram.lstrip("@")
+            return self.telegram  # already formatted as @username by frontend
         return self.phone or ""
 
     @property

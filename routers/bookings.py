@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
 from db.database import get_session
 from repositories.booking_repository import BookingRepository
+from services.telegram_fallback import notify_new_booking, notify_receipt as tg_notify_receipt
 from schemas.booking import (
     AvailabilityRequest,
     AvailabilityResponse,
@@ -88,14 +89,18 @@ async def create_booking(body: BookingCreateRequest, session: DbSession):
     # Notify bot only when no receipt is expected (gift cert fully covers the booking)
     no_receipt_expected = body.giftId and (body.prepaymentPrice or 0) == 0
     if settings.bot_notify_url and no_receipt_expected:
+        bot_ok = False
         try:
             async with httpx.AsyncClient(timeout=5) as client:
-                await client.post(
+                r = await client.post(
                     settings.bot_notify_url,
                     json={"booking_id": booking.id},
                 )
+                bot_ok = r.status_code == 200
         except Exception:
             pass
+        if not bot_ok and settings.telegram_bot_token and settings.admin_chat_id:
+            await notify_new_booking(settings.telegram_bot_token, settings.admin_chat_id, booking)
 
     return BookingCreateResponse(
         bookingId=booking.id,
@@ -116,8 +121,12 @@ async def upload_receipt(
     Accept a payment receipt photo/document from the user.
     Forwards it to the bot's HTTP endpoint which sends it to the admin Telegram chat.
     """
+    import logging
+    _log = logging.getLogger(__name__)
+
     repo = BookingRepository(session)
-    if not await repo.get_by_id(booking_id):
+    booking = await repo.get_by_id_with_user(booking_id)
+    if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Бронирование не найдено")
 
     if not settings.bot_receipt_url:
@@ -127,14 +136,31 @@ async def upload_receipt(
     filename = file.filename or "receipt"
     content_type = file.content_type or "application/octet-stream"
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(
-            settings.bot_receipt_url,
-            data={"booking_id": str(booking_id)},
-            files={"file": (filename, content, content_type)},
-        )
+    bot_ok = False
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                settings.bot_receipt_url,
+                data={"booking_id": str(booking_id)},
+                files={"file": (filename, content, content_type)},
+            )
+        if response.status_code == 200 and response.json().get("file_id"):
+            await repo.save_receipt_file_id(booking_id, response.json()["file_id"])
+            bot_ok = True
+        else:
+            _log.warning("bot receipt returned status=%s body=%s", response.status_code, response.text[:200])
+    except Exception as e:
+        _log.warning("bot receipt unavailable: %s", e)
 
-    if response.status_code == 200 and response.json().get("file_id"):
-        await repo.save_receipt_file_id(booking_id, response.json()["file_id"])
+    if not bot_ok and settings.telegram_bot_token and settings.admin_chat_id:
+        _log.warning("bot unavailable — sending receipt via telegram fallback for booking %s", booking_id)
+        try:
+            ok = await tg_notify_receipt(
+                settings.telegram_bot_token, settings.admin_chat_id,
+                booking, filename, content, content_type,
+            )
+            _log.warning("telegram fallback result: %s", ok)
+        except Exception as e:
+            _log.warning("telegram fallback failed: %s", e)
 
     return {"ok": True, "bookingId": booking_id}

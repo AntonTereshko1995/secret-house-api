@@ -1,7 +1,9 @@
 from datetime import date, datetime
 from typing import Sequence
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
@@ -11,6 +13,16 @@ from db.models.tariff import Tariff
 from repositories.base import BaseRepository
 from repositories.user_repository import UserRepository
 from schemas.booking import BookingCreateRequest
+
+
+_MINSK_TZ = ZoneInfo("Europe/Minsk")
+
+
+def _to_minsk_naive(dt: datetime) -> datetime:
+    """Convert a UTC-aware (or any tz-aware) datetime to a naive Minsk-local datetime."""
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(_MINSK_TZ)
+    return dt.replace(tzinfo=None)
 
 
 class BookingRepository(BaseRepository):
@@ -26,6 +38,14 @@ class BookingRepository(BaseRepository):
         """Return a single booking by primary key."""
         return await self.session.scalar(
             select(BookingBase).where(BookingBase.id == booking_id)
+        )
+
+    async def get_by_id_with_user(self, booking_id: int) -> BookingBase | None:
+        """Return a booking with its user eagerly loaded."""
+        return await self.session.scalar(
+            select(BookingBase)
+            .options(selectinload(BookingBase.user))
+            .where(BookingBase.id == booking_id)
         )
 
     async def save_receipt_file_id(self, booking_id: int, file_id: str) -> None:
@@ -63,10 +83,8 @@ class BookingRepository(BaseRepository):
 
     async def is_available(self, start: datetime, end: datetime) -> bool:
         """Return True if the requested interval has no conflicts."""
-        if start.tzinfo is not None:
-            start = start.replace(tzinfo=None)
-        if end.tzinfo is not None:
-            end = end.replace(tzinfo=None)
+        start = _to_minsk_naive(start)
+        end = _to_minsk_naive(end)
 
         overlap = await self.session.scalar(
             select(BookingBase).where(
@@ -91,8 +109,8 @@ class BookingRepository(BaseRepository):
         The booking starts as unpaid (is_prepaymented=False).
         The Telegram bot can pick it up and complete the payment flow.
         """
-        start_date = data.checkInDate.replace(tzinfo=None)
-        end_date = data.checkOutDate.replace(tzinfo=None)
+        start_date = _to_minsk_naive(data.checkInDate)
+        end_date = _to_minsk_naive(data.checkOutDate)
 
         user = await self.user_repo.get_or_create_user(
             contact=data.contact,
@@ -113,11 +131,12 @@ class BookingRepository(BaseRepository):
             has_secret_room=data.hasSecretRoom,
             number_of_guests=data.guestCount,
             price=data.totalPrice,
-            prepayment_price=data.prepaymentPrice or settings.prepayment,
+            prepayment_price=data.prepaymentPrice if data.prepaymentPrice is not None else settings.prepayment,
             comment=data.comment,
             wine_preference=data.wine_preference_str,
             transfer_address=data.transferAddress if data.needsTransfer else None,
             is_prepaymented=False,
+            source="web",
         )
 
         if data.promocodeId:

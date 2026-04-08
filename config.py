@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     def bot_notify_url(self) -> str:
         return f"{self.bot_base_url.rstrip('/')}/api/new-booking" if self.bot_base_url else ""
     better_stack_token: str = ""
+    telegram_bot_token: str = ""
+    admin_chat_id: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

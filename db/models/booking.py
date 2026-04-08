@@ -41,6 +41,7 @@ class BookingBase(Base):
     wine_preference: Mapped[str | None] = mapped_column(String, nullable=True)
     transfer_address: Mapped[str | None] = mapped_column(String, nullable=True)
     receipt_file_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    source: Mapped[str | None] = mapped_column(String, nullable=True)  # "web" | "telegram"
 
     user = relationship("UserBase")
     gift = relationship("GiftBase")
