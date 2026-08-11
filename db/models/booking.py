@@ -22,6 +22,7 @@ class BookingBase(Base):
     has_white_bedroom: Mapped[bool] = mapped_column(Boolean, default=False)
     has_green_bedroom: Mapped[bool] = mapped_column(Boolean, default=False)
     has_secret_room: Mapped[bool] = mapped_column(Boolean, default=False)
+    has_bath_tub: Mapped[bool] = mapped_column(Boolean, default=False)
     is_canceled: Mapped[bool] = mapped_column(Boolean, default=False)
     is_date_changed: Mapped[bool] = mapped_column(Boolean, default=False)
     number_of_guests: Mapped[int] = mapped_column(Integer, nullable=False)

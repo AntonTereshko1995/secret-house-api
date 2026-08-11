@@ -54,6 +54,7 @@ class BookingCreateRequest(BaseModel):
     bedroomType: Optional[str] = None       # "white" | "green" | None
     hasExtraBedroom: bool = False
     hasSecretRoom: bool = False
+    hasBathTub: bool = False
 
     # Comment & promo
     comment: Optional[str] = None

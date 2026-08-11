@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from db.database import engine
+from db.models.base import Base
+import db.models  # noqa: F401 — register all models before create_all
 from logger import setup_logger
 from routers import bookings, gifts, promocodes
 
@@ -13,6 +15,8 @@ setup_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     yield
     await engine.dispose()
 

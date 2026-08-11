@@ -129,6 +129,7 @@ class BookingRepository(BaseRepository):
             has_white_bedroom=data.has_white_bedroom,
             has_green_bedroom=data.has_green_bedroom,
             has_secret_room=data.hasSecretRoom,
+            has_bath_tub=data.hasBathTub,
             number_of_guests=data.guestCount,
             price=data.totalPrice,
             prepayment_price=data.prepaymentPrice if data.prepaymentPrice is not None else settings.prepayment,

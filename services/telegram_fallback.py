@@ -46,6 +46,7 @@ def _booking_text(booking: BookingBase, header: str) -> str:
         f"Предоплата: {booking.prepayment_price} руб.",
         f"Фотосессия: {_yes_no(booking.has_photoshoot)}",
         f"Сауна: {_yes_no(booking.has_sauna)}",
+        f"Горячий чан: {_yes_no(booking.has_bath_tub)}",
         f"Белая спальня: {_yes_no(booking.has_white_bedroom)}",
         f"Зеленая спальня: {_yes_no(booking.has_green_bedroom)}",
         f"Секретная комната: {_yes_no(booking.has_secret_room)}",
