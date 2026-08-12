@@ -22,6 +22,7 @@ class GiftBase(Base):
     has_secret_room: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
     )
+    has_bath_tub: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_paymented: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     price: Mapped[float] = mapped_column(Float, nullable=False)
     is_done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

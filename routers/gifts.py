@@ -34,6 +34,7 @@ class GiftValidateResponse(BaseModel):
     hasSauna: Optional[bool] = None
     hasSecretRoom: Optional[bool] = None
     hasAdditionalBedroom: Optional[bool] = None
+    hasBathTub: Optional[bool] = None
     price: Optional[float] = None
 
 
@@ -69,5 +70,6 @@ async def validate_gift_code(code: str = Query(...), session: DbSession = None):
         hasSauna=gift.has_sauna,
         hasSecretRoom=gift.has_secret_room,
         hasAdditionalBedroom=gift.has_additional_bedroom,
+        hasBathTub=gift.has_bath_tub,
         price=float(gift.price),
     )
