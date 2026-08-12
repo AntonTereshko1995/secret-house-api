@@ -92,3 +92,51 @@ async def notify_receipt(token: str, chat_id: str, booking: BookingBase,
     return await _send(token, chat_id, "sendDocument",
                        data={"chat_id": chat_id, "caption": caption},
                        files={"document": (filename, content, content_type)})
+
+
+async def notify_gift_purchase(
+    token: str,
+    chat_id: str,
+    gift,
+    filename: str | None,
+    content: bytes | None,
+    content_type: str | None,
+) -> bool:
+    """Send gift certificate purchase notification to admin chat with confirm/cancel buttons."""
+    tariff_name = _TARIFF_NAMES.get(gift.tariff, str(gift.tariff))
+    lines = [
+        "🎁 Новый подарочный сертификат!",
+        "",
+        f"Покупатель: {gift.buyer_contact}",
+        f"Дата окончания: {gift.date_expired.strftime('%d.%m.%Y')}",
+        f"Тариф: {tariff_name}",
+        f"Стоимость: {gift.price} руб.",
+        f"Сауна: {_yes_no(gift.has_sauna)}",
+        f"Банный чан: {_yes_no(gift.has_bath_tub)}",
+        f"Доп. спальня: {_yes_no(gift.has_additional_bedroom)}",
+        f"Секретная комната: {_yes_no(gift.has_secret_room)}",
+        f"Код: {gift.code}",
+    ]
+    caption = "\n".join(lines)
+    if len(caption) > 1024:
+        caption = caption[:1021] + "..."
+
+    # user_chat_id=0 means web purchase (no Telegram user to notify)
+    keyboard = {
+        "inline_keyboard": [
+            [{"text": "✅ Подтвердить оплату", "callback_data": f"gift_1_chatid_0_giftid_{gift.id}"}],
+            [{"text": "❌ Отмена", "callback_data": f"gift_2_chatid_0_giftid_{gift.id}"}],
+        ]
+    }
+
+    import json as _json
+    if content and content_type:
+        method = "sendPhoto" if content_type.startswith("image/") else "sendDocument"
+        field = "photo" if method == "sendPhoto" else "document"
+        return await _send(
+            token, chat_id, method,
+            data={"chat_id": chat_id, "caption": caption, "reply_markup": _json.dumps(keyboard)},
+            files={field: (filename or "receipt", content, content_type)},
+        )
+    return await _send(token, chat_id, "sendMessage",
+                       json={"chat_id": chat_id, "text": caption, "reply_markup": keyboard})

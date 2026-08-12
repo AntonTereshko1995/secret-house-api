@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     @property
     def bot_notify_url(self) -> str:
         return f"{self.bot_base_url.rstrip('/')}/api/new-booking" if self.bot_base_url else ""
+
+    @property
+    def bot_gift_notify_url(self) -> str:
+        return f"{self.bot_base_url.rstrip('/')}/api/gifts/notify" if self.bot_base_url else ""
     better_stack_token: str = ""
     telegram_bot_token: str = ""
     admin_chat_id: str = ""
