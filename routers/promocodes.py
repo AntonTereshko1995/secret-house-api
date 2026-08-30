@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -6,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.database import get_session
 from repositories.promocode_repository import PromocodeRepository
 from schemas.promocode import PromoValidateRequest, PromoValidateResponse
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -23,6 +26,11 @@ async def validate_promocode(body: PromoValidateRequest, session: DbSession):
         name=body.code,
         booking_date=body.bookingDate,
         tariff_str=body.tariff,
+    )
+
+    _log.info(
+        "promocode_validate code=%s tariff=%s date=%s valid=%s discount=%s",
+        body.code, body.tariff, body.bookingDate, is_valid, discount_pct,
     )
 
     return PromoValidateResponse(

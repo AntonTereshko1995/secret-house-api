@@ -7,9 +7,26 @@ from logtail import LogtailHandler
 from config import settings
 
 
+class _InterceptHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = str(record.levelno)
+        frame, depth = sys._getframe(6), 6
+        while frame and frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back  # type: ignore[assignment]
+            depth += 1
+        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+
+
 def setup_logger() -> None:
     logger.remove()
     logger.add(sys.stdout, level="INFO")
+
+    # Route all standard logging (uvicorn, fastapi, routers) through loguru
+    logging.root.handlers = [_InterceptHandler()]
+    logging.root.setLevel(logging.INFO)
 
     if not settings.better_stack_token:
         logger.warning("BETTER_STACK_TOKEN not set — remote logging disabled")
@@ -42,10 +59,5 @@ def setup_logger() -> None:
             logtail_handler.emit(log_record)
 
     logger.add(LogtailSink().write, level="INFO", format="{message}")
-
-    # Bridge uvicorn standard logging → BetterStack
-    for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"):
-        logging.getLogger(name).addHandler(logtail_handler)
-        logging.getLogger(name).setLevel(logging.INFO)
 
     logger.info("BetterStack logging initialized")

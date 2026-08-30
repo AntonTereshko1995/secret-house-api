@@ -1,4 +1,3 @@
-import os
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -11,10 +10,11 @@ class Settings(BaseSettings):
     def normalize_database_url(cls, v: str) -> str:
         v = v.strip().strip('"').strip("'")
         if v.startswith("postgres://"):
-            v = "postgresql://" + v[len("postgres://"):]
+            v = "postgresql://" + v[len("postgres://") :]
         if v.startswith("postgresql://"):
-            v = "postgresql+asyncpg://" + v[len("postgresql://"):]
+            v = "postgresql+asyncpg://" + v[len("postgresql://") :]
         return v
+
     debug: bool = False
     allowed_origins: str = "http://localhost:5173,http://localhost:3000"
     prepayment: float = 80.0
@@ -23,18 +23,31 @@ class Settings(BaseSettings):
 
     @property
     def bot_receipt_url(self) -> str:
-        return f"{self.bot_base_url.rstrip('/')}/api/receipt" if self.bot_base_url else ""
+        return (
+            f"{self.bot_base_url.rstrip('/')}/api/receipt" if self.bot_base_url else ""
+        )
 
     @property
     def bot_notify_url(self) -> str:
-        return f"{self.bot_base_url.rstrip('/')}/api/new-booking" if self.bot_base_url else ""
+        return (
+            f"{self.bot_base_url.rstrip('/')}/api/new-booking"
+            if self.bot_base_url
+            else ""
+        )
 
     @property
     def bot_gift_notify_url(self) -> str:
-        return f"{self.bot_base_url.rstrip('/')}/api/gifts/notify" if self.bot_base_url else ""
+        return (
+            f"{self.bot_base_url.rstrip('/')}/api/gifts/notify"
+            if self.bot_base_url
+            else ""
+        )
+
     better_stack_token: str = ""
-    telegram_bot_token: str = ""
-    admin_chat_id: str = ""
+
+    admin_username: str = "admin"
+    admin_password: str = ""
+    admin_secret_key: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

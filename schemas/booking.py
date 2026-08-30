@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 from pydantic import BaseModel, field_validator
 
@@ -14,6 +15,9 @@ TARIFF_ID_TO_INT: dict[str, int] = {
     "gift-certificate": 6,
     "daily-couple": 7,
 }
+
+# Reverse mapping: Tariff enum integer values → frontend string IDs
+TARIFF_INT_TO_STR: dict[int, str] = {v: k for k, v in TARIFF_ID_TO_INT.items()}
 
 
 class BookedPeriodResponse(BaseModel):
@@ -51,7 +55,7 @@ class BookingCreateRequest(BaseModel):
     # Options
     hasPhotoshoot: bool = False
     hasSauna: bool = False
-    bedroomType: Optional[str] = None       # "white" | "green" | None
+    bedroomType: Optional[str] = None  # "white" | "green" | None
     hasExtraBedroom: bool = False
     hasSecretRoom: bool = False
     hasBathTub: bool = False
@@ -71,7 +75,7 @@ class BookingCreateRequest(BaseModel):
     prepaymentPrice: Optional[float] = None
 
     # Contact
-    contactType: str        # "telegram" | "phone"
+    contactType: str  # "telegram" | "phone"
     telegram: Optional[str] = None
     phone: Optional[str] = None
 
@@ -107,5 +111,71 @@ class BookingCreateRequest(BaseModel):
 
 
 class BookingCreateResponse(BaseModel):
+    bookingId: int
+    publicId: UUID
+    message: str
+
+
+class BookingDetailResponse(BaseModel):
+    """Full booking detail returned to the frontend."""
+
+    bookingId: int
+    publicId: UUID
+    startDate: datetime
+    endDate: datetime
+    tariff: str
+    guestCount: int
+    hasPhotoshoot: bool
+    hasSauna: bool
+    hasExtraBedroom: bool
+    hasSecretRoom: bool
+    hasBathTub: bool
+    isCanceled: bool
+    isDateChanged: bool
+    isPrepaymented: bool
+    isDone: bool
+    totalPrice: float
+    prepaymentPrice: float
+    comment: Optional[str]
+    wineSelection: list[str]
+    transferAddress: Optional[str]
+    isFuture: bool
+    canModify: bool
+    canReschedule: bool
+    canCancel: bool
+    canPay: bool
+
+
+class BookingUpdateTariffRequest(BaseModel):
+    tariff: str
+    totalPrice: float
+
+    @field_validator("tariff")
+    @classmethod
+    def validate_tariff(cls, v: str) -> str:
+        if v not in TARIFF_ID_TO_INT:
+            raise ValueError(f"Unknown tariff: {v}")
+        return v
+
+
+class BookingUpdateServicesRequest(BaseModel):
+    hasPhotoshoot: bool = False
+    hasSauna: bool = False
+    hasBathTub: bool = False
+    hasExtraBedroom: bool = False
+    hasSecretRoom: bool = False
+    wineSelection: list[str] = []
+    needsTransfer: bool = False
+    transferAddress: Optional[str] = None
+    totalPrice: float
+
+
+class BookingRescheduleRequest(BaseModel):
+    checkInDate: datetime
+    checkOutDate: datetime
+    totalPrice: float
+
+
+class BookingUpdateResponse(BaseModel):
     bookingId: int
     message: str

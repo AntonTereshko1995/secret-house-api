@@ -1,9 +1,11 @@
 from datetime import datetime
+from uuid import UUID, uuid4
 
 from db.models.base import Base
 from db.models.decorator.type_decorator import IntEnumType
 from db.models.tariff import Tariff
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 PREPAYMENT_DEFAULT = 80.0
@@ -13,6 +15,7 @@ class BookingBase(Base):
     __tablename__ = "booking"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    public_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), default=uuid4, unique=True, nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     start_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     end_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
@@ -42,7 +45,9 @@ class BookingBase(Base):
     wine_preference: Mapped[str | None] = mapped_column(String, nullable=True)
     transfer_address: Mapped[str | None] = mapped_column(String, nullable=True)
     receipt_file_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    source: Mapped[str | None] = mapped_column(String, nullable=True)  # "web" | "telegram"
+    source: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )  # "web" | "telegram"
 
     user = relationship("UserBase")
     gift = relationship("GiftBase")
