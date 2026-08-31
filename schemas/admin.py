@@ -77,6 +77,7 @@ class AdminUpdateServicesRequest(BaseModel):
     needsTransfer: bool = False
     transferAddress: Optional[str] = None
     totalPrice: float
+    bedroomType: Optional[str] = None
 
 
 class AdminBookingsPageResponse(BaseModel):
@@ -89,3 +90,104 @@ class AdminBookingsPageResponse(BaseModel):
 class AdminUpdateResponse(BaseModel):
     bookingId: int
     message: str
+
+
+# ---------------------------------------------------------------------------
+# Statistics response models
+# ---------------------------------------------------------------------------
+
+
+class AdminStatsSummary(BaseModel):
+    totalBookings: int
+    activeBookings: int
+    canceledBookings: int
+    doneBookings: int
+    totalRevenue: float
+    avgPrice: float
+    prepaidCount: int
+    cancelRate: float
+
+
+class AdminStatsMonthly(BaseModel):
+    year: int
+    month: int
+    total: int
+    done: int
+    canceled: int
+    revenue: float
+
+
+class AdminStatsTariff(BaseModel):
+    tariff: str
+    total: int
+    revenue: float
+    avgPrice: float
+    cancelCount: int
+
+
+class AdminStatsSource(BaseModel):
+    source: str
+    total: int
+    done: int
+    canceled: int
+    cancelRate: float
+
+
+class AdminStatsDow(BaseModel):
+    dow: int
+    dayName: str
+    total: int
+
+
+class AdminStatsDuration(BaseModel):
+    bucket: str
+    label: str
+    total: int
+
+
+class AdminStatsGuests(BaseModel):
+    guestCount: int
+    total: int
+
+
+class AdminStatsOptions(BaseModel):
+    hasSauna: int
+    hasWhiteBedroom: int
+    hasGreenBedroom: int
+    hasSecretRoom: int
+    hasPhotoshoot: int
+    hasBathTub: int
+    saunaAvgPrice: float
+    noSaunaAvgPrice: float
+
+
+class AdminStatsUsers(BaseModel):
+    total: int
+    active: int
+    withBookings: int
+    withCompleted: int
+    repeatCustomers: int
+    loyalCustomers: int
+    telegramAccounts: int
+
+
+class AdminStatsGifts(BaseModel):
+    total: int
+    paid: int
+    used: int
+    expired: int
+    avgPrice: float
+
+
+class AdminStatisticsResponse(BaseModel):
+    summary: AdminStatsSummary
+    monthlyBreakdown: list[AdminStatsMonthly]
+    tariffBreakdown: list[AdminStatsTariff]
+    sourceBreakdown: list[AdminStatsSource]
+    dayOfWeekBreakdown: list[AdminStatsDow]
+    durationBreakdown: list[AdminStatsDuration]
+    guestCountBreakdown: list[AdminStatsGuests]
+    options: AdminStatsOptions
+    users: AdminStatsUsers
+    gifts: AdminStatsGifts
+    generatedAt: datetime

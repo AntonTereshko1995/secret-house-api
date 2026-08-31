@@ -46,33 +46,6 @@ def _wine_name(wine_id: str) -> str:
     return _WINE_NAMES.get(wine_id, wine_id)
 
 
-def _active_services_lines(
-    *,
-    has_photoshoot: bool,
-    has_sauna: bool,
-    has_bath_tub: bool,
-    has_extra_bedroom: bool,
-    has_secret_room: bool,
-    wine: str | None,
-    transfer_address: str | None,
-) -> list[str]:
-    lines = []
-    if has_photoshoot:
-        lines.append("Фотосессия: Да")
-    if has_sauna:
-        lines.append("Сауна: Да")
-    if has_bath_tub:
-        lines.append("Горячий чан: Да")
-    if has_extra_bedroom:
-        lines.append("Доп. спальня: Да")
-    if has_secret_room:
-        lines.append("Секретная комната: Да")
-    if wine:
-        lines.append(f"Вино: {wine}")
-    if transfer_address:
-        lines.append(f"Трансфер: {transfer_address}")
-    return lines
-
 
 def _yes_no(value: bool) -> str:
     return "Да" if value else "Нет"
@@ -90,23 +63,24 @@ def _contact_from_booking(booking: BookingBase) -> str:
     return contact or "N/A"
 
 
-def _booking_text(booking: BookingBase, header: str) -> str:
+def _booking_text(booking: BookingBase, header: str, *, contact: str | None = None) -> str:
     tariff_name = _tariff_name(booking.tariff)
+    contact_str = contact if contact is not None else _contact_from_booking(booking)
     lines = [
         header,
         "",
-        f"Пользователь: {_contact_from_booking(booking)}",
+        f"Пользователь: {contact_str}",
         f"Дата начала: {booking.start_date.strftime('%d.%m.%Y %H:%M')}",
         f"Дата завершения: {booking.end_date.strftime('%d.%m.%Y %H:%M')}",
         f"Тариф: {tariff_name}",
         f"Стоимость: {booking.price} руб.",
         f"Предоплата: {booking.prepayment_price} руб.",
-        f"Фотосессия: {_yes_no(booking.has_photoshoot)}",
-        f"Сауна: {_yes_no(booking.has_sauna)}",
-        f"Горячий чан: {_yes_no(booking.has_bath_tub)}",
-        f"Белая спальня: {_yes_no(booking.has_white_bedroom)}",
-        f"Зеленая спальня: {_yes_no(booking.has_green_bedroom)}",
-        f"Секретная комната: {_yes_no(booking.has_secret_room)}",
+        *([f"Фотосессия: Да"] if booking.has_photoshoot else []),
+        *([f"Сауна: Да"] if booking.has_sauna else []),
+        *([f"Горячий чан: Да"] if booking.has_bath_tub else []),
+        *([f"Белая спальня: Да"] if booking.has_white_bedroom else []),
+        *([f"Зеленая спальня: Да"] if booking.has_green_bedroom else []),
+        *([f"Секретная комната: Да"] if booking.has_secret_room else []),
         f"Количество гостей: {booking.number_of_guests}",
     ]
     if booking.comment:
@@ -188,82 +162,28 @@ class TelegramService:
         return None
 
     async def on_booking_cancelled(self, booking: BookingBase) -> None:
-        await self._notify_inform(
-            f"Отмена бронирования!\n"
-            f"Контакт клиента: {_contact_from_booking(booking)}\n"
-            f"Дата начала: {booking.start_date.strftime('%d.%m.%Y %H:%M')}\n"
-            f"Дата завершения: {booking.end_date.strftime('%d.%m.%Y %H:%M')}\n"
-        )
+        await self._notify_inform(_booking_text(booking, "Отмена бронирования!"))
         await self._calendar_post("/api/calendar/cancel", booking.id)
 
     async def on_tariff_changed(
         self,
         booking: BookingBase,
         old_tariff_name: str,
-        new_tariff_name: str,
         contact: str,
-        new_price: float,
     ) -> None:
-        wine = None
-        if booking.wine_preference:
-            wine = ", ".join(
-                _wine_name(w.strip()) for w in booking.wine_preference.split(",") if w.strip()
-            )
-        lines = [
-            "Изменение тарифа бронирования!",
-            f"Контакт клиента: {contact}",
-            f"Дата начала: {booking.start_date.strftime('%d.%m.%Y %H:%M')}",
-            f"Дата завершения: {booking.end_date.strftime('%d.%m.%Y %H:%M')}",
-            f"Старый тариф: {old_tariff_name}",
-            f"Новый тариф: {new_tariff_name}",
-            f"Новая стоимость: {new_price} руб.",
-        ]
-        lines += _active_services_lines(
-            has_photoshoot=booking.has_photoshoot,
-            has_sauna=booking.has_sauna,
-            has_bath_tub=booking.has_bath_tub,
-            has_extra_bedroom=booking.has_white_bedroom or booking.has_green_bedroom,
-            has_secret_room=booking.has_secret_room,
-            wine=wine,
-            transfer_address=booking.transfer_address,
-        )
-        await self._notify_inform("\n".join(lines))
+        header = f"Изменение тарифа бронирования!\nСтарый тариф: {old_tariff_name}"
+        await self._notify_inform(_booking_text(booking, header, contact=contact))
         await self._calendar_post("/api/calendar/update-info", booking.id)
 
     async def on_services_changed(
         self,
         booking: BookingBase,
         *,
-        has_photoshoot: bool,
-        has_sauna: bool,
-        has_bath_tub: bool,
-        has_extra_bedroom: bool,
-        has_secret_room: bool,
-        wine_selection: list,
-        needs_transfer: bool,
-        transfer_address: str | None,
-        new_price: float,
         contact: str,
     ) -> None:
-        wine = ", ".join(_wine_name(w) for w in wine_selection) if wine_selection else None
-        lines = [
-            "Изменение услуг бронирования!",
-            f"Контакт клиента: {contact}",
-            f"Дата начала: {booking.start_date.strftime('%d.%m.%Y %H:%M')}",
-            f"Дата завершения: {booking.end_date.strftime('%d.%m.%Y %H:%M')}",
-            f"Тариф: {_tariff_name(booking.tariff)}",
-            f"Новая стоимость: {new_price} руб.",
-        ]
-        lines += _active_services_lines(
-            has_photoshoot=has_photoshoot,
-            has_sauna=has_sauna,
-            has_bath_tub=has_bath_tub,
-            has_extra_bedroom=has_extra_bedroom,
-            has_secret_room=has_secret_room,
-            wine=wine,
-            transfer_address=transfer_address if needs_transfer else None,
+        await self._notify_inform(
+            _booking_text(booking, "Изменение услуг бронирования!", contact=contact)
         )
-        await self._notify_inform("\n".join(lines))
         await self._calendar_post("/api/calendar/update-info", booking.id)
 
     async def on_booking_confirmed(self, booking: BookingBase) -> None:
@@ -281,45 +201,34 @@ class TelegramService:
         booking: BookingBase,
         *,
         old_price: float,
-        new_price: float,
         old_prepayment: float,
-        new_prepayment: float,
         contact: str,
     ) -> None:
-        lines = [
-            "Изменение стоимости бронирования!",
-            f"Контакт клиента: {contact}",
-            f"Дата начала: {booking.start_date.strftime('%d.%m.%Y %H:%M')}",
-            f"Дата завершения: {booking.end_date.strftime('%d.%m.%Y %H:%M')}",
-        ]
-        if old_price != new_price:
-            lines.append(f"Старая стоимость: {old_price} руб.")
-            lines.append(f"Новая стоимость: {new_price} руб.")
-        if old_prepayment != new_prepayment:
-            lines.append(f"Старая предоплата: {old_prepayment} руб.")
-            lines.append(f"Новая предоплата: {new_prepayment} руб.")
-        await self._notify_inform("\n".join(lines))
+        header_lines = ["Изменение стоимости бронирования!"]
+        if old_price != booking.price:
+            header_lines.append(f"Старая стоимость: {old_price} руб.")
+        if old_prepayment != booking.prepayment_price:
+            header_lines.append(f"Старая предоплата: {old_prepayment} руб.")
+        await self._notify_inform(
+            _booking_text(booking, "\n".join(header_lines), contact=contact)
+        )
         await self._calendar_post("/api/calendar/update-info", booking.id)
 
     async def on_rescheduled(
         self,
         *,
-        booking_id: int,
+        booking: BookingBase,
         old_start,
         old_end,
-        new_start,
-        new_end,
         contact: str,
     ) -> None:
-        await self._notify_inform(
+        header = (
             f"Перенос даты бронирования!\n"
-            f"Контакт клиента: {contact}\n"
             f"Старая дата начала: {old_start.strftime('%d.%m.%Y %H:%M')}\n"
-            f"Старая дата завершения: {old_end.strftime('%d.%m.%Y %H:%M')}\n"
-            f"Новая дата начала: {new_start.strftime('%d.%m.%Y %H:%M')}\n"
-            f"Новая дата завершения: {new_end.strftime('%d.%m.%Y %H:%M')}\n"
+            f"Старая дата завершения: {old_end.strftime('%d.%m.%Y %H:%M')}"
         )
-        await self._calendar_post("/api/calendar/reschedule", booking_id)
+        await self._notify_inform(_booking_text(booking, header, contact=contact))
+        await self._calendar_post("/api/calendar/reschedule", booking.id)
 
     async def on_gift_purchased(
         self,

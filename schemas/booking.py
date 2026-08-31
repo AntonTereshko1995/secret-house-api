@@ -169,6 +169,7 @@ class BookingUpdateServicesRequest(BaseModel):
     needsTransfer: bool = False
     transferAddress: Optional[str] = None
     totalPrice: float
+    bedroomType: Optional[str] = None
 
 
 class BookingRescheduleRequest(BaseModel):

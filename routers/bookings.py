@@ -10,7 +10,6 @@ from sqlalchemy import and_, select
 from config import settings
 from db.database import get_session
 from db.models.booking import BookingBase
-from db.models.tariff import Tariff
 from dependencies import TelegramDep
 from repositories.booking_repository import (
     BookingRepository,
@@ -216,7 +215,7 @@ async def update_booking_tariff(
     old_tariff_name = telegram.tariff_display_name(booking.tariff)
     contact = booking.user.contact if booking.user else ""
     try:
-        await repo.update_tariff(booking.id, body.tariff, body.totalPrice)
+        updated = await repo.update_tariff(booking.id, body.tariff, body.totalPrice)
     except ValueError as exc:
         _log.warning("booking_update_tariff failed public_id=%s: %s", public_id, exc)
         raise HTTPException(
@@ -225,16 +224,8 @@ async def update_booking_tariff(
     _log.info(
         "booking_tariff_updated id=%s tariff=%s price=%s", booking.id, body.tariff, body.totalPrice
     )
-    new_tariff_int = TARIFF_ID_TO_INT.get(body.tariff)
-    new_tariff_name = (
-        telegram.tariff_display_name(Tariff(new_tariff_int))
-        if new_tariff_int is not None
-        else body.tariff
-    )
     try:
-        await telegram.on_tariff_changed(
-            booking, old_tariff_name, new_tariff_name, contact, body.totalPrice
-        )
+        await telegram.on_tariff_changed(updated, old_tariff_name, contact)
     except Exception as e:
         _log.warning("tariff notify failed: %s", e, exc_info=True)
     return BookingUpdateResponse(bookingId=booking.id, message="Тариф успешно изменён")
@@ -251,7 +242,7 @@ async def update_booking_services(
     booking = await _get_booking_with_user_or_404(public_id, repo)
     contact = booking.user.contact if booking.user else ""
     try:
-        await repo.update_services(booking.id, body)
+        updated = await repo.update_services(booking.id, body)
     except ValueError as exc:
         _log.warning("booking_update_services failed public_id=%s: %s", public_id, exc)
         raise HTTPException(
@@ -259,19 +250,7 @@ async def update_booking_services(
         ) from exc
     _log.info("booking_services_updated id=%s", booking.id)
     try:
-        await telegram.on_services_changed(
-            booking,
-            has_photoshoot=body.hasPhotoshoot,
-            has_sauna=body.hasSauna,
-            has_bath_tub=body.hasBathTub,
-            has_extra_bedroom=body.hasExtraBedroom,
-            has_secret_room=body.hasSecretRoom,
-            wine_selection=body.wineSelection,
-            needs_transfer=body.needsTransfer,
-            transfer_address=body.transferAddress,
-            new_price=body.totalPrice,
-            contact=contact,
-        )
+        await telegram.on_services_changed(updated, contact=contact)
     except Exception as e:
         _log.warning("services notify failed: %s", e, exc_info=True)
     return BookingUpdateResponse(bookingId=booking.id, message="Услуги успешно обновлены")
@@ -307,11 +286,9 @@ async def reschedule_booking(
     )
     try:
         await telegram.on_rescheduled(
-            booking_id=booking.id,
+            booking=updated,
             old_start=old_start,
             old_end=old_end,
-            new_start=updated.start_date,
-            new_end=updated.end_date,
             contact=contact,
         )
     except Exception as e:

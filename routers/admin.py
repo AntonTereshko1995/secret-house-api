@@ -17,27 +17,29 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
-
-_log = logging.getLogger(__name__)
 from db.database import get_session
-from db.models.tariff import Tariff
 from dependencies import TelegramDep
 from repositories.booking_repository import (
     BookingRepository,
     _to_admin_booking_detail,
 )
+from repositories.promocode_repository import PromocodeRepository, _to_promo_read
 from schemas.admin import (
     AdminBookingDetailResponse,
     AdminBookingsPageResponse,
     AdminLoginRequest,
     AdminLoginResponse,
     AdminRescheduleRequest,
+    AdminStatisticsResponse,
     AdminUpdatePriceRequest,
     AdminUpdateResponse,
     AdminUpdateServicesRequest,
     AdminUpdateTariffRequest,
 )
-from schemas.booking import BookedPeriodResponse, TARIFF_ID_TO_INT
+from schemas.booking import BookedPeriodResponse
+from schemas.promocode import PromoAdminRead, PromoCreateRequest
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -179,6 +181,18 @@ async def admin_get_booked_periods(
     ]
 
 
+@router.get("/statistics", response_model=AdminStatisticsResponse)
+async def admin_get_statistics(
+    _: AdminAuth,
+    session: DbSession,
+    from_date: date | None = Query(default=None, description="Filter start date (YYYY-MM-DD)"),
+    to_date: date | None = Query(default=None, description="Filter end date (YYYY-MM-DD)"),
+):
+    """Return comprehensive booking/user/gift statistics for the admin dashboard."""
+    repo = BookingRepository(session)
+    return await repo.admin_get_statistics(from_date=from_date, to_date=to_date)
+
+
 @router.get("/bookings/{booking_id}", response_model=AdminBookingDetailResponse)
 async def admin_get_booking(
     booking_id: int,
@@ -278,21 +292,15 @@ async def admin_update_tariff(
     old_tariff_name = telegram.tariff_display_name(booking.tariff)
     contact = booking.user.contact if booking.user else ""
     try:
-        await repo.admin_update_tariff(booking_id, body.tariff, body.totalPrice)
+        updated = await repo.admin_update_tariff(booking_id, body.tariff, body.totalPrice)
     except ValueError as exc:
         _log.warning("admin_update_tariff failed id=%s: %s", booking_id, exc)
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)
         ) from exc
     _log.info("admin_update_tariff id=%s tariff=%s price=%s", booking_id, body.tariff, body.totalPrice)
-    new_tariff_int = TARIFF_ID_TO_INT.get(body.tariff)
-    new_tariff_name = (
-        telegram.tariff_display_name(Tariff(new_tariff_int))
-        if new_tariff_int is not None
-        else body.tariff
-    )
     try:
-        await telegram.on_tariff_changed(booking, old_tariff_name, new_tariff_name, contact, body.totalPrice)
+        await telegram.on_tariff_changed(updated, old_tariff_name, contact)
     except Exception as e:
         _log.warning("tariff notify failed: %s", e, exc_info=True)
     return AdminUpdateResponse(bookingId=booking_id, message="Тариф изменён")
@@ -315,7 +323,7 @@ async def admin_update_services(
         )
     contact = booking.user.contact if booking.user else ""
     try:
-        await repo.admin_update_services(booking_id, body)
+        updated = await repo.admin_update_services(booking_id, body)
     except ValueError as exc:
         _log.warning("admin_update_services failed id=%s: %s", booking_id, exc)
         raise HTTPException(
@@ -323,19 +331,7 @@ async def admin_update_services(
         ) from exc
     _log.info("admin_update_services id=%s", booking_id)
     try:
-        await telegram.on_services_changed(
-            booking,
-            has_photoshoot=body.hasPhotoshoot,
-            has_sauna=body.hasSauna,
-            has_bath_tub=body.hasBathTub,
-            has_extra_bedroom=body.hasExtraBedroom,
-            has_secret_room=body.hasSecretRoom,
-            wine_selection=body.wineSelection,
-            needs_transfer=body.needsTransfer,
-            transfer_address=body.transferAddress,
-            new_price=body.totalPrice,
-            contact=contact,
-        )
+        await telegram.on_services_changed(updated, contact=contact)
     except Exception as e:
         _log.warning("services notify failed: %s", e, exc_info=True)
     return AdminUpdateResponse(bookingId=booking_id, message="Услуги обновлены")
@@ -374,11 +370,9 @@ async def admin_reschedule_booking(
     _log.info("admin_reschedule id=%s check_in=%s check_out=%s", booking_id, body.checkInDate, body.checkOutDate)
     try:
         await telegram.on_rescheduled(
-            booking_id=booking.id,
+            booking=updated,
             old_start=old_start,
             old_end=old_end,
-            new_start=updated.start_date,
-            new_end=updated.end_date,
             contact=contact,
         )
     except Exception as e:
@@ -423,7 +417,7 @@ async def admin_update_price(
     old_prepayment = booking.prepayment_price
     contact = booking.user.contact if booking.user else ""
     try:
-        await repo.admin_update_price(booking_id, body.totalPrice, body.prepaymentPrice)
+        updated = await repo.admin_update_price(booking_id, body.totalPrice, body.prepaymentPrice)
     except ValueError as exc:
         _log.warning("admin_update_price failed id=%s: %s", booking_id, exc)
         raise HTTPException(
@@ -432,13 +426,79 @@ async def admin_update_price(
     _log.info("admin_update_price id=%s total=%s prepayment=%s", booking_id, body.totalPrice, body.prepaymentPrice)
     try:
         await telegram.on_price_changed(
-            booking,
+            updated,
             old_price=old_price,
-            new_price=body.totalPrice,
             old_prepayment=old_prepayment,
-            new_prepayment=body.prepaymentPrice,
             contact=contact,
         )
     except Exception as e:
         _log.warning("price notify failed: %s", e, exc_info=True)
     return AdminUpdateResponse(bookingId=booking_id, message="Стоимость обновлена")
+
+
+# ---------------------------------------------------------------------------
+# Promo code management
+# ---------------------------------------------------------------------------
+
+
+@router.get("/promocodes", response_model=list[PromoAdminRead])
+async def admin_list_promocodes(
+    _: AdminAuth,
+    session: DbSession,
+    status: str = Query(default="all", description="all|active|inactive"),
+):
+    """List all promo codes, optionally filtered by active status."""
+    repo = PromocodeRepository(session)
+    promos = await repo.admin_list(status)
+    return [_to_promo_read(p) for p in promos]
+
+
+@router.get("/promocodes/{promo_id}", response_model=PromoAdminRead)
+async def admin_get_promocode(
+    promo_id: int,
+    _: AdminAuth,
+    session: DbSession,
+):
+    """Return a single promo code by ID."""
+    repo = PromocodeRepository(session)
+    promo = await repo.admin_get_by_id(promo_id)
+    if not promo:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND, detail="Промокод не найден"
+        )
+    return _to_promo_read(promo)
+
+
+@router.post("/promocodes", response_model=PromoAdminRead, status_code=201)
+async def admin_create_promocode(
+    body: PromoCreateRequest,
+    _: AdminAuth,
+    session: DbSession,
+):
+    """Create a new promo code."""
+    repo = PromocodeRepository(session)
+    promo = await repo.admin_create(body)
+    _log.info("admin_create_promocode name=%s discount=%s", body.name, body.discountPercentage)
+    return _to_promo_read(promo)
+
+
+@router.patch("/promocodes/{promo_id}", response_model=PromoAdminRead)
+async def admin_update_promocode(
+    promo_id: int,
+    body: PromoCreateRequest,
+    _: AdminAuth,
+    session: DbSession,
+):
+    """Full-replace update of a promo code."""
+    repo = PromocodeRepository(session)
+    try:
+        promo = await repo.admin_update(promo_id, body)
+    except ValueError as exc:
+        _log.warning("admin_update_promocode failed id=%s: %s", promo_id, exc)
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+    _log.info(
+        "admin_update_promocode id=%s name=%s active=%s", promo_id, body.name, body.isActive
+    )
+    return _to_promo_read(promo)

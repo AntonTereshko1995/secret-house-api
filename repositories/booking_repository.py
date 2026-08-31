@@ -3,7 +3,7 @@ from typing import Sequence
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, case, extract, func, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +16,17 @@ from repositories.base import BaseRepository
 from repositories.user_repository import UserRepository
 from schemas.admin import (
     AdminBookingDetailResponse,
+    AdminStatsDow,
+    AdminStatsDuration,
+    AdminStatsGifts,
+    AdminStatsGuests,
+    AdminStatsMonthly,
+    AdminStatsOptions,
+    AdminStatsSource,
+    AdminStatsSummary,
+    AdminStatsTariff,
+    AdminStatsUsers,
+    AdminStatisticsResponse,
     AdminUpdateServicesRequest,
 )
 from schemas.booking import (
@@ -400,8 +411,15 @@ class BookingRepository(BaseRepository):
         booking.has_photoshoot = data.hasPhotoshoot
         booking.has_sauna = data.hasSauna
         booking.has_bath_tub = data.hasBathTub
-        booking.has_white_bedroom = data.hasExtraBedroom
-        booking.has_green_bedroom = data.hasExtraBedroom
+        if data.bedroomType == "white":
+            booking.has_white_bedroom = True
+            booking.has_green_bedroom = False
+        elif data.bedroomType == "green":
+            booking.has_white_bedroom = False
+            booking.has_green_bedroom = True
+        elif data.hasExtraBedroom:
+            booking.has_white_bedroom = True
+            booking.has_green_bedroom = True
         booking.has_secret_room = data.hasSecretRoom
         booking.wine_preference = (
             ", ".join(data.wineSelection) if data.wineSelection else None
@@ -580,8 +598,15 @@ class BookingRepository(BaseRepository):
         booking.has_photoshoot = data.hasPhotoshoot
         booking.has_sauna = data.hasSauna
         booking.has_bath_tub = data.hasBathTub
-        booking.has_white_bedroom = data.hasExtraBedroom
-        booking.has_green_bedroom = data.hasExtraBedroom
+        if data.bedroomType == "white":
+            booking.has_white_bedroom = True
+            booking.has_green_bedroom = False
+        elif data.bedroomType == "green":
+            booking.has_white_bedroom = False
+            booking.has_green_bedroom = True
+        elif data.hasExtraBedroom:
+            booking.has_white_bedroom = True
+            booking.has_green_bedroom = True
         booking.has_secret_room = data.hasSecretRoom
         booking.wine_preference = (
             ", ".join(data.wineSelection) if data.wineSelection else None
@@ -660,3 +685,395 @@ class BookingRepository(BaseRepository):
             raise ValueError("Бронирование не найдено")
         await self.session.delete(booking)
         await self.session.commit()
+
+    # ------------------------------------------------------------------
+    # Admin — statistics
+    # ------------------------------------------------------------------
+
+    async def admin_get_statistics(
+        self,
+        from_date: date | None = None,
+        to_date: date | None = None,
+    ) -> AdminStatisticsResponse:
+        """Compute comprehensive booking/user/gift statistics.
+
+        Booking aggregations respect the optional date range (applied to start_date).
+        User and gift stats are always all-time.
+        """
+        from datetime import time as _time
+
+        def _apply_date_range(q):
+            if from_date:
+                q = q.where(BookingBase.start_date >= datetime.combine(from_date, _time.min))
+            if to_date:
+                q = q.where(BookingBase.start_date <= datetime.combine(to_date, _time.max))
+            return q
+
+        # ── 1. Summary ──────────────────────────────────────────────────────────
+        summary_q = _apply_date_range(
+            select(
+                func.count().label("total"),
+                func.sum(
+                    case(
+                        (
+                            and_(
+                                BookingBase.is_canceled == False,  # noqa: E712
+                                BookingBase.is_done == False,  # noqa: E712
+                            ),
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ).label("active"),
+                func.sum(
+                    case((BookingBase.is_canceled == True, 1), else_=0)  # noqa: E712
+                ).label("canceled"),
+                func.sum(
+                    case((BookingBase.is_done == True, 1), else_=0)  # noqa: E712
+                ).label("done"),
+                func.sum(
+                    case(
+                        (BookingBase.is_canceled == False, BookingBase.price),  # noqa: E712
+                        else_=0.0,
+                    )
+                ).label("revenue"),
+                func.sum(
+                    case((BookingBase.is_prepaymented == True, 1), else_=0)  # noqa: E712
+                ).label("prepaid"),
+            ).select_from(BookingBase)
+        )
+        s = (await self.session.execute(summary_q)).one()
+
+        total = s.total or 0
+        canceled = s.canceled or 0
+        revenue = float(s.revenue or 0)
+        non_canceled = total - canceled
+        avg_price = revenue / non_canceled if non_canceled > 0 else 0.0
+        cancel_rate = (canceled / total * 100) if total > 0 else 0.0
+
+        summary = AdminStatsSummary(
+            totalBookings=total,
+            activeBookings=s.active or 0,
+            canceledBookings=canceled,
+            doneBookings=s.done or 0,
+            totalRevenue=revenue,
+            avgPrice=round(avg_price, 2),
+            prepaidCount=s.prepaid or 0,
+            cancelRate=round(cancel_rate, 1),
+        )
+
+        # ── 2. Monthly breakdown ────────────────────────────────────────────────
+        year_col = extract("year", BookingBase.start_date)
+        month_col = extract("month", BookingBase.start_date)
+        monthly_q = _apply_date_range(
+            select(
+                year_col.label("yr"),
+                month_col.label("mo"),
+                func.count().label("total"),
+                func.sum(
+                    case((BookingBase.is_done == True, 1), else_=0)  # noqa: E712
+                ).label("done"),
+                func.sum(
+                    case((BookingBase.is_canceled == True, 1), else_=0)  # noqa: E712
+                ).label("canceled"),
+                func.sum(
+                    case(
+                        (BookingBase.is_canceled == False, BookingBase.price),  # noqa: E712
+                        else_=0.0,
+                    )
+                ).label("revenue"),
+            )
+            .select_from(BookingBase)
+            .group_by(year_col, month_col)
+            .order_by(year_col, month_col)
+        )
+        monthly_rows = (await self.session.execute(monthly_q)).all()
+        monthly_breakdown = [
+            AdminStatsMonthly(
+                year=int(r.yr),
+                month=int(r.mo),
+                total=r.total,
+                done=r.done or 0,
+                canceled=r.canceled or 0,
+                revenue=float(r.revenue or 0),
+            )
+            for r in monthly_rows
+        ]
+
+        # ── 3. Tariff breakdown ─────────────────────────────────────────────────
+        revenue_expr = func.sum(
+            case(
+                (BookingBase.is_canceled == False, BookingBase.price),  # noqa: E712
+                else_=0.0,
+            )
+        )
+        tariff_q = _apply_date_range(
+            select(
+                BookingBase.tariff.label("tariff_val"),
+                func.count().label("total"),
+                revenue_expr.label("revenue"),
+                func.sum(
+                    case((BookingBase.is_canceled == True, 1), else_=0)  # noqa: E712
+                ).label("canceled"),
+            )
+            .select_from(BookingBase)
+            .group_by(BookingBase.tariff)
+            .order_by(revenue_expr.desc())
+        )
+        tariff_rows = (await self.session.execute(tariff_q)).all()
+        tariff_breakdown: list[AdminStatsTariff] = []
+        for r in tariff_rows:
+            tariff_int = r.tariff_val.value if hasattr(r.tariff_val, "value") else int(r.tariff_val)
+            t_str = TARIFF_INT_TO_STR.get(tariff_int, "unknown")
+            cancel_c = r.canceled or 0
+            active_c = r.total - cancel_c
+            t_avg = float(r.revenue or 0) / active_c if active_c > 0 else 0.0
+            tariff_breakdown.append(
+                AdminStatsTariff(
+                    tariff=t_str,
+                    total=r.total,
+                    revenue=float(r.revenue or 0),
+                    avgPrice=round(t_avg, 2),
+                    cancelCount=cancel_c,
+                )
+            )
+
+        # ── 4. Source breakdown ─────────────────────────────────────────────────
+        src_col = func.coalesce(BookingBase.source, "unknown")
+        source_q = _apply_date_range(
+            select(
+                src_col.label("src"),
+                func.count().label("total"),
+                func.sum(
+                    case((BookingBase.is_done == True, 1), else_=0)  # noqa: E712
+                ).label("done"),
+                func.sum(
+                    case((BookingBase.is_canceled == True, 1), else_=0)  # noqa: E712
+                ).label("canceled"),
+            )
+            .select_from(BookingBase)
+            .group_by(src_col)
+            .order_by(func.count().desc())
+        )
+        source_rows = (await self.session.execute(source_q)).all()
+        source_breakdown = [
+            AdminStatsSource(
+                source=r.src,
+                total=r.total,
+                done=r.done or 0,
+                canceled=r.canceled or 0,
+                cancelRate=round((r.canceled or 0) / r.total * 100, 1) if r.total > 0 else 0.0,
+            )
+            for r in source_rows
+        ]
+
+        # ── 5. Day-of-week (non-canceled) ───────────────────────────────────────
+        _DOW_NAMES = [
+            "Понедельник",
+            "Вторник",
+            "Среда",
+            "Четверг",
+            "Пятница",
+            "Суббота",
+            "Воскресенье",
+        ]
+        pg_dow_col = extract("dow", BookingBase.start_date)
+        dow_q = _apply_date_range(
+            select(pg_dow_col.label("pg_dow"), func.count().label("total"))
+            .select_from(BookingBase)
+            .where(BookingBase.is_canceled == False)  # noqa: E712
+            .group_by(pg_dow_col)
+            .order_by(pg_dow_col)
+        )
+        dow_rows = (await self.session.execute(dow_q)).all()
+        # PostgreSQL DOW: 0=Sun,1=Mon,...,6=Sat → Python weekday: 0=Mon,...,6=Sun
+        dow_breakdown = sorted(
+            [
+                AdminStatsDow(
+                    dow=(int(r.pg_dow) - 1) % 7,
+                    dayName=_DOW_NAMES[(int(r.pg_dow) - 1) % 7],
+                    total=r.total,
+                )
+                for r in dow_rows
+            ],
+            key=lambda x: x.dow,
+        )
+
+        # ── 6. Duration buckets (non-canceled) ──────────────────────────────────
+        _DURATION_LABELS: dict[str, str] = {
+            "lt_6h": "< 6 ч",
+            "6_12h": "6–12 ч",
+            "12_24h": "12–24 ч",
+            "24_48h": "24–48 ч",
+            "gt_48h": "> 48 ч",
+        }
+        _BUCKET_ORDER = ["lt_6h", "6_12h", "12_24h", "24_48h", "gt_48h"]
+        hours_expr = (
+            func.extract("epoch", BookingBase.end_date - BookingBase.start_date) / 3600.0
+        )
+        dur_bucket_col = case(
+            (hours_expr < 6, "lt_6h"),
+            (hours_expr < 12, "6_12h"),
+            (hours_expr < 24, "12_24h"),
+            (hours_expr < 48, "24_48h"),
+            else_="gt_48h",
+        )
+        dur_q = _apply_date_range(
+            select(dur_bucket_col.label("bucket"), func.count().label("total"))
+            .select_from(BookingBase)
+            .where(BookingBase.is_canceled == False)  # noqa: E712
+            .group_by(dur_bucket_col)
+        )
+        dur_raw: dict[str, int] = {
+            r.bucket: r.total for r in (await self.session.execute(dur_q)).all()
+        }
+        duration_breakdown = [
+            AdminStatsDuration(bucket=b, label=_DURATION_LABELS[b], total=dur_raw.get(b, 0))
+            for b in _BUCKET_ORDER
+        ]
+
+        # ── 7. Guest-count (non-canceled) ───────────────────────────────────────
+        guest_q = _apply_date_range(
+            select(
+                BookingBase.number_of_guests.label("guests"),
+                func.count().label("total"),
+            )
+            .select_from(BookingBase)
+            .where(BookingBase.is_canceled == False)  # noqa: E712
+            .group_by(BookingBase.number_of_guests)
+            .order_by(BookingBase.number_of_guests)
+        )
+        guest_rows = (await self.session.execute(guest_q)).all()
+        guest_count_breakdown = [
+            AdminStatsGuests(guestCount=r.guests, total=r.total) for r in guest_rows
+        ]
+
+        # ── 8. Options stats (non-canceled) ─────────────────────────────────────
+        opts_q = _apply_date_range(
+            select(
+                func.sum(
+                    case((BookingBase.has_sauna == True, 1), else_=0)  # noqa: E712
+                ).label("sauna"),
+                func.sum(
+                    case((BookingBase.has_white_bedroom == True, 1), else_=0)  # noqa: E712
+                ).label("white"),
+                func.sum(
+                    case((BookingBase.has_green_bedroom == True, 1), else_=0)  # noqa: E712
+                ).label("green"),
+                func.sum(
+                    case((BookingBase.has_secret_room == True, 1), else_=0)  # noqa: E712
+                ).label("secret"),
+                func.sum(
+                    case((BookingBase.has_photoshoot == True, 1), else_=0)  # noqa: E712
+                ).label("photo"),
+                func.sum(
+                    case((BookingBase.has_bath_tub == True, 1), else_=0)  # noqa: E712
+                ).label("bath"),
+                func.avg(
+                    case(
+                        (BookingBase.has_sauna == True, BookingBase.price),  # noqa: E712
+                        else_=None,
+                    )
+                ).label("sauna_avg"),
+                func.avg(
+                    case(
+                        (BookingBase.has_sauna == False, BookingBase.price),  # noqa: E712
+                        else_=None,
+                    )
+                ).label("no_sauna_avg"),
+            )
+            .select_from(BookingBase)
+            .where(BookingBase.is_canceled == False)  # noqa: E712
+        )
+        o = (await self.session.execute(opts_q)).one()
+        options = AdminStatsOptions(
+            hasSauna=o.sauna or 0,
+            hasWhiteBedroom=o.white or 0,
+            hasGreenBedroom=o.green or 0,
+            hasSecretRoom=o.secret or 0,
+            hasPhotoshoot=o.photo or 0,
+            hasBathTub=o.bath or 0,
+            saunaAvgPrice=round(float(o.sauna_avg or 0), 2),
+            noSaunaAvgPrice=round(float(o.no_sauna_avg or 0), 2),
+        )
+
+        # ── 9. User stats (all-time — no date filter) ───────────────────────────
+        user_q = select(
+            func.count().label("total"),
+            func.sum(
+                case((UserBase.is_active == True, 1), else_=0)  # noqa: E712
+            ).label("active"),
+            func.sum(
+                case((UserBase.has_bookings == True, 1), else_=0)  # noqa: E712
+            ).label("with_b"),
+            func.sum(
+                case((UserBase.completed_bookings > 0, 1), else_=0)
+            ).label("with_done"),
+            func.sum(
+                case((UserBase.total_bookings >= 2, 1), else_=0)
+            ).label("repeat"),
+            func.sum(
+                case((UserBase.total_bookings >= 3, 1), else_=0)
+            ).label("loyal"),
+            func.sum(
+                case((UserBase.chat_id.isnot(None), 1), else_=0)
+            ).label("tg"),
+        ).select_from(UserBase)
+        u = (await self.session.execute(user_q)).one()
+        users = AdminStatsUsers(
+            total=u.total or 0,
+            active=u.active or 0,
+            withBookings=u.with_b or 0,
+            withCompleted=u.with_done or 0,
+            repeatCustomers=u.repeat or 0,
+            loyalCustomers=u.loyal or 0,
+            telegramAccounts=u.tg or 0,
+        )
+
+        # ── 10. Gift stats (all-time — no date filter) ──────────────────────────
+        now_naive = datetime.now()
+        gift_q = select(
+            func.count().label("total"),
+            func.sum(
+                case((GiftBase.is_paymented == True, 1), else_=0)  # noqa: E712
+            ).label("paid"),
+            func.sum(
+                case((GiftBase.is_done == True, 1), else_=0)  # noqa: E712
+            ).label("used"),
+            func.sum(
+                case(
+                    (
+                        and_(
+                            GiftBase.date_expired < now_naive,
+                            GiftBase.is_done == False,  # noqa: E712
+                            GiftBase.is_paymented == True,  # noqa: E712
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("expired"),
+            func.avg(GiftBase.price).label("avg_price"),
+        ).select_from(GiftBase)
+        g = (await self.session.execute(gift_q)).one()
+        gifts = AdminStatsGifts(
+            total=g.total or 0,
+            paid=g.paid or 0,
+            used=g.used or 0,
+            expired=g.expired or 0,
+            avgPrice=round(float(g.avg_price or 0), 2),
+        )
+
+        return AdminStatisticsResponse(
+            summary=summary,
+            monthlyBreakdown=monthly_breakdown,
+            tariffBreakdown=tariff_breakdown,
+            sourceBreakdown=source_breakdown,
+            dayOfWeekBreakdown=dow_breakdown,
+            durationBreakdown=duration_breakdown,
+            guestCountBreakdown=guest_count_breakdown,
+            options=options,
+            users=users,
+            gifts=gifts,
+            generatedAt=datetime.now(),
+        )
