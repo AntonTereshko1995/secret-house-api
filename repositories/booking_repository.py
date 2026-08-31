@@ -640,3 +640,11 @@ class BookingRepository(BaseRepository):
         await self.session.commit()
         await self.session.refresh(booking)
         return booking
+
+    async def admin_delete_booking(self, booking_id: int) -> None:
+        """Permanently delete a booking — hard delete, no restrictions."""
+        booking = await self.session.get(BookingBase, booking_id)
+        if not booking:
+            raise ValueError("Бронирование не найдено")
+        await self.session.delete(booking)
+        await self.session.commit()

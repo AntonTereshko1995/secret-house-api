@@ -386,6 +386,24 @@ async def admin_reschedule_booking(
     return AdminUpdateResponse(bookingId=booking_id, message="Дата перенесена")
 
 
+@router.delete("/bookings/{booking_id}", response_model=AdminUpdateResponse)
+async def admin_delete_booking(
+    booking_id: int,
+    _: AdminAuth,
+    session: DbSession,
+):
+    """Permanently delete a booking from the database (hard delete)."""
+    repo = BookingRepository(session)
+    try:
+        await repo.admin_delete_booking(booking_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+    _log.info("admin_delete_booking id=%s", booking_id)
+    return AdminUpdateResponse(bookingId=booking_id, message="Бронирование удалено")
+
+
 @router.patch("/bookings/{booking_id}/price", response_model=AdminUpdateResponse)
 async def admin_update_price(
     booking_id: int,
