@@ -41,6 +41,7 @@ class AdminBookingDetailResponse(BaseModel):
     source: Optional[str]
     userContact: Optional[str]
     userName: Optional[str]
+    bedroomType: Optional[str] = None
 
 
 class AdminRescheduleRequest(BaseModel):

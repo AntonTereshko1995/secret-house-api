@@ -144,6 +144,7 @@ class BookingDetailResponse(BaseModel):
     canReschedule: bool
     canCancel: bool
     canPay: bool
+    bedroomType: Optional[str] = None
 
 
 class BookingUpdateTariffRequest(BaseModel):

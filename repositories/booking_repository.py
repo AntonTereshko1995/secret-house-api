@@ -48,7 +48,12 @@ def _to_booking_detail(b: BookingBase) -> BookingDetailResponse:
         else []
     )
 
-    has_extra = b.has_white_bedroom or b.has_green_bedroom
+    has_extra = b.has_white_bedroom and b.has_green_bedroom
+    bedroom_type: str | None = None
+    if b.has_white_bedroom and not b.has_green_bedroom:
+        bedroom_type = "white"
+    elif b.has_green_bedroom and not b.has_white_bedroom:
+        bedroom_type = "green"
 
     is_future = b.start_date > now_naive
     not_closed = not b.is_canceled and not b.is_done
@@ -83,6 +88,7 @@ def _to_booking_detail(b: BookingBase) -> BookingDetailResponse:
         canReschedule=can_reschedule,
         canCancel=can_cancel,
         canPay=can_pay,
+        bedroomType=bedroom_type,
     )
 
 
@@ -117,7 +123,12 @@ def _to_admin_booking_detail(b: BookingBase) -> AdminBookingDetailResponse:
         if b.wine_preference
         else []
     )
-    has_extra = b.has_white_bedroom or b.has_green_bedroom
+    has_extra = b.has_white_bedroom and b.has_green_bedroom
+    admin_bedroom_type: str | None = None
+    if b.has_white_bedroom and not b.has_green_bedroom:
+        admin_bedroom_type = "white"
+    elif b.has_green_bedroom and not b.has_white_bedroom:
+        admin_bedroom_type = "green"
 
     return AdminBookingDetailResponse(
         bookingId=b.id,
@@ -143,6 +154,7 @@ def _to_admin_booking_detail(b: BookingBase) -> AdminBookingDetailResponse:
         source=b.source,
         userContact=b.user.contact if b.user else None,
         userName=b.user.user_name if b.user else None,
+        bedroomType=admin_bedroom_type,
     )
 
 
