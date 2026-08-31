@@ -374,6 +374,7 @@ async def admin_reschedule_booking(
     _log.info("admin_reschedule id=%s check_in=%s check_out=%s", booking_id, body.checkInDate, body.checkOutDate)
     try:
         await telegram.on_rescheduled(
+            booking_id=booking.id,
             old_start=old_start,
             old_end=old_end,
             new_start=updated.start_date,

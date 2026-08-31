@@ -194,6 +194,7 @@ class TelegramService:
             f"Дата начала: {booking.start_date.strftime('%d.%m.%Y %H:%M')}\n"
             f"Дата завершения: {booking.end_date.strftime('%d.%m.%Y %H:%M')}\n"
         )
+        await self._calendar_post("/api/calendar/cancel", booking.id)
 
     async def on_tariff_changed(
         self,
@@ -227,6 +228,7 @@ class TelegramService:
             transfer_address=booking.transfer_address,
         )
         await self._notify_inform("\n".join(lines))
+        await self._calendar_post("/api/calendar/update-info", booking.id)
 
     async def on_services_changed(
         self,
@@ -262,6 +264,7 @@ class TelegramService:
             transfer_address=transfer_address if needs_transfer else None,
         )
         await self._notify_inform("\n".join(lines))
+        await self._calendar_post("/api/calendar/update-info", booking.id)
 
     async def on_booking_confirmed(self, booking: BookingBase) -> None:
         await self._notify_inform(
@@ -296,10 +299,12 @@ class TelegramService:
             lines.append(f"Старая предоплата: {old_prepayment} руб.")
             lines.append(f"Новая предоплата: {new_prepayment} руб.")
         await self._notify_inform("\n".join(lines))
+        await self._calendar_post("/api/calendar/update-info", booking.id)
 
     async def on_rescheduled(
         self,
         *,
+        booking_id: int,
         old_start,
         old_end,
         new_start,
@@ -314,6 +319,7 @@ class TelegramService:
             f"Новая дата начала: {new_start.strftime('%d.%m.%Y %H:%M')}\n"
             f"Новая дата завершения: {new_end.strftime('%d.%m.%Y %H:%M')}\n"
         )
+        await self._calendar_post("/api/calendar/reschedule", booking_id)
 
     async def on_gift_purchased(
         self,
@@ -375,3 +381,14 @@ class TelegramService:
         )
         if not ok:
             _log.warning("_notify_inform: bot unavailable, message lost")
+
+    async def _calendar_post(self, path: str, booking_id: int) -> None:
+        if not self._bot_base_url:
+            return
+        ok = await self._post_to_bot(
+            f"{self._bot_base_url}{path}",
+            json={"booking_id": booking_id},
+            timeout=10,
+        )
+        if not ok:
+            _log.warning("_calendar_post: bot unavailable path=%s booking_id=%s", path, booking_id)

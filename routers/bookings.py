@@ -307,6 +307,7 @@ async def reschedule_booking(
     )
     try:
         await telegram.on_rescheduled(
+            booking_id=booking.id,
             old_start=old_start,
             old_end=old_end,
             new_start=updated.start_date,
