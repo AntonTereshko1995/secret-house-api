@@ -23,6 +23,7 @@ from repositories.booking_repository import (
     BookingRepository,
     _to_admin_booking_detail,
 )
+from repositories.pricing_repository import PricingRepository, _to_record
 from repositories.promocode_repository import PromocodeRepository, _to_promo_read
 from schemas.admin import (
     AdminBookingDetailResponse,
@@ -37,6 +38,12 @@ from schemas.admin import (
     AdminUpdateTariffRequest,
 )
 from schemas.booking import BookedPeriodResponse
+from schemas.pricing import (
+    PricingResponse,
+    PricingSettingsUpdateRequest,
+    PricingUpdateResponse,
+    TariffPriceUpdateRequest,
+)
 from schemas.promocode import PromoAdminRead, PromoCreateRequest
 
 _log = logging.getLogger(__name__)
@@ -185,8 +192,12 @@ async def admin_get_booked_periods(
 async def admin_get_statistics(
     _: AdminAuth,
     session: DbSession,
-    from_date: date | None = Query(default=None, description="Filter start date (YYYY-MM-DD)"),
-    to_date: date | None = Query(default=None, description="Filter end date (YYYY-MM-DD)"),
+    from_date: date | None = Query(
+        default=None, description="Filter start date (YYYY-MM-DD)"
+    ),
+    to_date: date | None = Query(
+        default=None, description="Filter end date (YYYY-MM-DD)"
+    ),
 ):
     """Return comprehensive booking/user/gift statistics for the admin dashboard."""
     repo = BookingRepository(session)
@@ -292,13 +303,20 @@ async def admin_update_tariff(
     old_tariff_name = telegram.tariff_display_name(booking.tariff)
     contact = booking.user.contact if booking.user else ""
     try:
-        updated = await repo.admin_update_tariff(booking_id, body.tariff, body.totalPrice)
+        updated = await repo.admin_update_tariff(
+            booking_id, body.tariff, body.totalPrice
+        )
     except ValueError as exc:
         _log.warning("admin_update_tariff failed id=%s: %s", booking_id, exc)
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)
         ) from exc
-    _log.info("admin_update_tariff id=%s tariff=%s price=%s", booking_id, body.tariff, body.totalPrice)
+    _log.info(
+        "admin_update_tariff id=%s tariff=%s price=%s",
+        booking_id,
+        body.tariff,
+        body.totalPrice,
+    )
     try:
         await telegram.on_tariff_changed(updated, old_tariff_name, contact)
     except Exception as e:
@@ -367,7 +385,12 @@ async def admin_reschedule_booking(
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)
         ) from exc
-    _log.info("admin_reschedule id=%s check_in=%s check_out=%s", booking_id, body.checkInDate, body.checkOutDate)
+    _log.info(
+        "admin_reschedule id=%s check_in=%s check_out=%s",
+        booking_id,
+        body.checkInDate,
+        body.checkOutDate,
+    )
     try:
         await telegram.on_rescheduled(
             booking=updated,
@@ -417,13 +440,20 @@ async def admin_update_price(
     old_prepayment = booking.prepayment_price
     contact = booking.user.contact if booking.user else ""
     try:
-        updated = await repo.admin_update_price(booking_id, body.totalPrice, body.prepaymentPrice)
+        updated = await repo.admin_update_price(
+            booking_id, body.totalPrice, body.prepaymentPrice
+        )
     except ValueError as exc:
         _log.warning("admin_update_price failed id=%s: %s", booking_id, exc)
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)
         ) from exc
-    _log.info("admin_update_price id=%s total=%s prepayment=%s", booking_id, body.totalPrice, body.prepaymentPrice)
+    _log.info(
+        "admin_update_price id=%s total=%s prepayment=%s",
+        booking_id,
+        body.totalPrice,
+        body.prepaymentPrice,
+    )
     try:
         await telegram.on_price_changed(
             updated,
@@ -478,7 +508,9 @@ async def admin_create_promocode(
     """Create a new promo code."""
     repo = PromocodeRepository(session)
     promo = await repo.admin_create(body)
-    _log.info("admin_create_promocode name=%s discount=%s", body.name, body.discountPercentage)
+    _log.info(
+        "admin_create_promocode name=%s discount=%s", body.name, body.discountPercentage
+    )
     return _to_promo_read(promo)
 
 
@@ -499,6 +531,69 @@ async def admin_update_promocode(
             status_code=http_status.HTTP_404_NOT_FOUND, detail=str(exc)
         ) from exc
     _log.info(
-        "admin_update_promocode id=%s name=%s active=%s", promo_id, body.name, body.isActive
+        "admin_update_promocode id=%s name=%s active=%s",
+        promo_id,
+        body.name,
+        body.isActive,
     )
     return _to_promo_read(promo)
+
+
+# ---------------------------------------------------------------------------
+# Pricing management
+# ---------------------------------------------------------------------------
+
+_VALID_TARIFF_IDS = {
+    "incognito-daily",
+    "incognito-12h",
+    "incognito-work",
+    "daily-3plus",
+    "daily-couple",
+    "12h-standard",
+    "work-standard",
+}
+
+
+@router.get("/pricing", response_model=PricingResponse)
+async def admin_get_pricing(_: AdminAuth, session: DbSession):
+    """Return all tariff prices (admin)."""
+    repo = PricingRepository(session)
+    rows = await repo.get_all()
+    settings = await repo.get_settings()
+    is_sale_active = settings.get("is_sale_active", "false") == "true"
+    return PricingResponse(
+        tariffs=[_to_record(r) for r in rows],
+        isSaleActive=is_sale_active,
+    )
+
+
+@router.patch("/pricing-settings", response_model=PricingUpdateResponse)
+async def admin_update_pricing_settings(
+    body: PricingSettingsUpdateRequest,
+    _: AdminAuth,
+    session: DbSession,
+):
+    """Update global pricing settings (sale mode toggle)."""
+    repo = PricingRepository(session)
+    await repo.update_settings(body)
+    _log.info("admin_update_pricing_settings sale=%s", body.isSaleActive)
+    return PricingUpdateResponse(tariffId="settings", message="Настройки обновлены")
+
+
+@router.patch("/pricing/{tariff_id}", response_model=PricingUpdateResponse)
+async def admin_update_tariff_pricing(
+    tariff_id: str,
+    body: TariffPriceUpdateRequest,
+    _: AdminAuth,
+    session: DbSession,
+):
+    """Update standard + sale prices for a single tariff."""
+    if tariff_id not in _VALID_TARIFF_IDS:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail=f"Тариф {tariff_id!r} не найден",
+        )
+    repo = PricingRepository(session)
+    await repo.upsert(tariff_id, body)
+    _log.info("admin_update_pricing tariff_id=%s", tariff_id)
+    return PricingUpdateResponse(tariffId=tariff_id, message="Цены обновлены")

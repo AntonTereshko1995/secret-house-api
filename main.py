@@ -10,7 +10,7 @@ from db.database import engine
 from db.models.base import Base
 import db.models  # noqa: F401 — register all models before create_all
 from logger import setup_logger
-from routers import admin, bookings, gifts, promocodes
+from routers import admin, bookings, gifts, pricing, promocodes
 
 setup_logger()
 
@@ -63,6 +63,7 @@ app.include_router(bookings.router, prefix="/api/bookings", tags=["bookings"])
 app.include_router(promocodes.router, prefix="/api/promocodes", tags=["promocodes"])
 app.include_router(gifts.router, prefix="/api/gifts", tags=["gifts"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
+app.include_router(pricing.router, prefix="/api", tags=["pricing"])
 
 
 # ---------------------------------------------------------------------------
