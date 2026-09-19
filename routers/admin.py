@@ -561,9 +561,11 @@ async def admin_get_pricing(_: AdminAuth, session: DbSession):
     rows = await repo.get_all()
     settings = await repo.get_settings()
     is_sale_active = settings.get("is_sale_active", "false") == "true"
+    is_combo_active = settings.get("is_sauna_bath_tub_combo_active", "false") == "true"
     return PricingResponse(
         tariffs=[_to_record(r) for r in rows],
         isSaleActive=is_sale_active,
+        isSaunaBathTubComboActive=is_combo_active,
     )
 
 
@@ -573,10 +575,14 @@ async def admin_update_pricing_settings(
     _: AdminAuth,
     session: DbSession,
 ):
-    """Update global pricing settings (sale mode toggle)."""
+    """Update global pricing settings (sale mode toggle + combo toggle)."""
     repo = PricingRepository(session)
     await repo.update_settings(body)
-    _log.info("admin_update_pricing_settings sale=%s", body.isSaleActive)
+    _log.info(
+        "admin_update_pricing_settings sale=%s combo=%s",
+        body.isSaleActive,
+        body.isSaunaBathTubComboActive,
+    )
     return PricingUpdateResponse(tariffId="settings", message="Настройки обновлены")
 
 

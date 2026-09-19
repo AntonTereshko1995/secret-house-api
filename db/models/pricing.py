@@ -41,6 +41,12 @@ class TariffPricingBase(Base):
     sale_photoshoot_price: Mapped[float] = mapped_column(
         Float, nullable=False, default=0
     )
+    combined_sauna_bath_tub_price: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0
+    )
+    sale_combined_sauna_bath_tub_price: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0
+    )
     sale_multi_day_prices: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict
     )

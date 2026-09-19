@@ -14,6 +14,7 @@ class TariffPriceRecord(BaseModel):
     extraHourPrice: float
     extraPeoplePrice: float
     photoshootPrice: float
+    combinedSaunaBathTubPrice: float
     multiDayPrices: dict[int, float]
     # Sale prices
     salePrice: float
@@ -24,6 +25,7 @@ class TariffPriceRecord(BaseModel):
     saleExtraHourPrice: float
     saleExtraPeoplePrice: float
     salePhotoshootPrice: float
+    saleCombinedSaunaBathTubPrice: float
     saleMultiDayPrices: dict[int, float]
     updatedAt: datetime
 
@@ -39,6 +41,7 @@ class EffectiveTariffPriceRecord(BaseModel):
     extraHourPrice: float
     extraPeoplePrice: float
     photoshootPrice: float
+    combinedSaunaBathTubPrice: float
     multiDayPrices: dict[int, float]
     updatedAt: datetime
 
@@ -46,11 +49,13 @@ class EffectiveTariffPriceRecord(BaseModel):
 class PublicPricingResponse(BaseModel):
     tariffs: list[EffectiveTariffPriceRecord]
     isSaleActive: bool
+    isSaunaBathTubComboActive: bool
 
 
 class PricingResponse(BaseModel):
     tariffs: list[TariffPriceRecord]
     isSaleActive: bool
+    isSaunaBathTubComboActive: bool
 
 
 class TariffPriceUpdateRequest(BaseModel):
@@ -62,6 +67,7 @@ class TariffPriceUpdateRequest(BaseModel):
     extraHourPrice: float
     extraPeoplePrice: float
     photoshootPrice: float
+    combinedSaunaBathTubPrice: float
     multiDayPrices: dict[int, float]
     salePrice: float
     saleSaunaPrice: float
@@ -71,6 +77,7 @@ class TariffPriceUpdateRequest(BaseModel):
     saleExtraHourPrice: float
     saleExtraPeoplePrice: float
     salePhotoshootPrice: float
+    saleCombinedSaunaBathTubPrice: float
     saleMultiDayPrices: dict[int, float]
 
     @field_validator(
@@ -82,6 +89,8 @@ class TariffPriceUpdateRequest(BaseModel):
         "saleBathTubPrice",
         "extraHourPrice",
         "saleExtraHourPrice",
+        "combinedSaunaBathTubPrice",
+        "saleCombinedSaunaBathTubPrice",
         mode="before",
     )
     @classmethod
@@ -93,6 +102,7 @@ class TariffPriceUpdateRequest(BaseModel):
 
 class PricingSettingsUpdateRequest(BaseModel):
     isSaleActive: bool
+    isSaunaBathTubComboActive: bool
 
 
 class PricingUpdateResponse(BaseModel):

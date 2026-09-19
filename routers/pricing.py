@@ -19,7 +19,9 @@ async def get_pricing(session: DbSession):
     rows = await repo.get_all()
     settings = await repo.get_settings()
     is_sale_active = settings.get("is_sale_active", "false") == "true"
+    is_combo_active = settings.get("is_sauna_bath_tub_combo_active", "false") == "true"
     return PublicPricingResponse(
         tariffs=[_to_effective_record(r, is_sale_active) for r in rows],
         isSaleActive=is_sale_active,
+        isSaunaBathTubComboActive=is_combo_active,
     )

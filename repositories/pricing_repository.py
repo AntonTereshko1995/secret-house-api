@@ -32,6 +32,7 @@ DEFAULT_PRICES: dict[str, dict] = {
         "extra_hour_price": 30,
         "extra_people_price": 0,
         "photoshoot_price": 0,
+        "combined_sauna_bath_tub_price": 0,
         "multi_day_prices": {
             1: 900,
             2: 1600,
@@ -56,6 +57,7 @@ DEFAULT_PRICES: dict[str, dict] = {
         "sale_extra_hour_price": 30,
         "sale_extra_people_price": 0,
         "sale_photoshoot_price": 0,
+        "sale_combined_sauna_bath_tub_price": 0,
         "sale_multi_day_prices": {
             1: 700,
             2: 1400,
@@ -82,6 +84,7 @@ DEFAULT_PRICES: dict[str, dict] = {
         "extra_hour_price": 30,
         "extra_people_price": 0,
         "photoshoot_price": 100,
+        "combined_sauna_bath_tub_price": 0,
         "multi_day_prices": {},
         "sale_price": 500,
         "sale_sauna_price": 0,
@@ -91,6 +94,7 @@ DEFAULT_PRICES: dict[str, dict] = {
         "sale_extra_hour_price": 30,
         "sale_extra_people_price": 0,
         "sale_photoshoot_price": 100,
+        "sale_combined_sauna_bath_tub_price": 0,
         "sale_multi_day_prices": {},
     },
     "incognito-work": {
@@ -102,6 +106,7 @@ DEFAULT_PRICES: dict[str, dict] = {
         "extra_hour_price": 30,
         "extra_people_price": 0,
         "photoshoot_price": 100,
+        "combined_sauna_bath_tub_price": 0,
         "multi_day_prices": {},
         "sale_price": 400,
         "sale_sauna_price": 0,
@@ -111,6 +116,7 @@ DEFAULT_PRICES: dict[str, dict] = {
         "sale_extra_hour_price": 30,
         "sale_extra_people_price": 0,
         "sale_photoshoot_price": 100,
+        "sale_combined_sauna_bath_tub_price": 0,
         "sale_multi_day_prices": {},
     },
     "daily-3plus": {
@@ -122,6 +128,7 @@ DEFAULT_PRICES: dict[str, dict] = {
         "extra_hour_price": 30,
         "extra_people_price": 0,
         "photoshoot_price": 100,
+        "combined_sauna_bath_tub_price": 250,
         "multi_day_prices": {
             1: 700,
             2: 1100,
@@ -146,6 +153,7 @@ DEFAULT_PRICES: dict[str, dict] = {
         "sale_extra_hour_price": 30,
         "sale_extra_people_price": 0,
         "sale_photoshoot_price": 100,
+        "sale_combined_sauna_bath_tub_price": 250,
         "sale_multi_day_prices": {
             1: 500,
             2: 950,
@@ -172,6 +180,7 @@ DEFAULT_PRICES: dict[str, dict] = {
         "extra_hour_price": 30,
         "extra_people_price": 200,
         "photoshoot_price": 100,
+        "combined_sauna_bath_tub_price": 250,
         "multi_day_prices": {
             1: 500,
             2: 900,
@@ -196,6 +205,7 @@ DEFAULT_PRICES: dict[str, dict] = {
         "sale_extra_hour_price": 30,
         "sale_extra_people_price": 70,
         "sale_photoshoot_price": 100,
+        "sale_combined_sauna_bath_tub_price": 250,
         "sale_multi_day_prices": {
             1: 400,
             2: 800,
@@ -222,6 +232,7 @@ DEFAULT_PRICES: dict[str, dict] = {
         "extra_hour_price": 30,
         "extra_people_price": 70,
         "photoshoot_price": 0,
+        "combined_sauna_bath_tub_price": 250,
         "multi_day_prices": {},
         "sale_price": 200,
         "sale_sauna_price": 100,
@@ -231,6 +242,7 @@ DEFAULT_PRICES: dict[str, dict] = {
         "sale_extra_hour_price": 30,
         "sale_extra_people_price": 70,
         "sale_photoshoot_price": 0,
+        "sale_combined_sauna_bath_tub_price": 250,
         "sale_multi_day_prices": {},
     },
     "work-standard": {
@@ -242,6 +254,7 @@ DEFAULT_PRICES: dict[str, dict] = {
         "extra_hour_price": 30,
         "extra_people_price": 100,
         "photoshoot_price": 0,
+        "combined_sauna_bath_tub_price": 250,
         "multi_day_prices": {},
         "sale_price": 180,
         "sale_sauna_price": 100,
@@ -251,6 +264,7 @@ DEFAULT_PRICES: dict[str, dict] = {
         "sale_extra_hour_price": 30,
         "sale_extra_people_price": 100,
         "sale_photoshoot_price": 0,
+        "sale_combined_sauna_bath_tub_price": 250,
         "sale_multi_day_prices": {},
     },
 }
@@ -276,6 +290,9 @@ def _to_effective_record(row: TariffPricingBase, is_sale: bool) -> EffectiveTari
         extraHourPrice=row.sale_extra_hour_price if is_sale else row.extra_hour_price,
         extraPeoplePrice=row.sale_extra_people_price if is_sale else row.extra_people_price,
         photoshootPrice=row.sale_photoshoot_price if is_sale else row.photoshoot_price,
+        combinedSaunaBathTubPrice=(
+            row.sale_combined_sauna_bath_tub_price if is_sale else row.combined_sauna_bath_tub_price
+        ),
         multiDayPrices=mdp,
         updatedAt=row.updated_at,
     )
@@ -292,6 +309,7 @@ def _to_record(row: TariffPricingBase) -> TariffPriceRecord:
         extraHourPrice=row.extra_hour_price,
         extraPeoplePrice=row.extra_people_price,
         photoshootPrice=row.photoshoot_price,
+        combinedSaunaBathTubPrice=row.combined_sauna_bath_tub_price,
         multiDayPrices=_parse_multi_day(row.multi_day_prices),
         salePrice=row.sale_price,
         saleSaunaPrice=row.sale_sauna_price,
@@ -301,6 +319,7 @@ def _to_record(row: TariffPricingBase) -> TariffPriceRecord:
         saleExtraHourPrice=row.sale_extra_hour_price,
         saleExtraPeoplePrice=row.sale_extra_people_price,
         salePhotoshootPrice=row.sale_photoshoot_price,
+        saleCombinedSaunaBathTubPrice=row.sale_combined_sauna_bath_tub_price,
         saleMultiDayPrices=_parse_multi_day(row.sale_multi_day_prices),
         updatedAt=row.updated_at,
     )
@@ -340,6 +359,7 @@ class PricingRepository(BaseRepository):
         row.extra_hour_price = data.extraHourPrice
         row.extra_people_price = data.extraPeoplePrice
         row.photoshoot_price = data.photoshootPrice
+        row.combined_sauna_bath_tub_price = data.combinedSaunaBathTubPrice
         row.multi_day_prices = data.multiDayPrices
         row.sale_price = data.salePrice
         row.sale_sauna_price = data.saleSaunaPrice
@@ -349,6 +369,7 @@ class PricingRepository(BaseRepository):
         row.sale_extra_hour_price = data.saleExtraHourPrice
         row.sale_extra_people_price = data.saleExtraPeoplePrice
         row.sale_photoshoot_price = data.salePhotoshootPrice
+        row.sale_combined_sauna_bath_tub_price = data.saleCombinedSaunaBathTubPrice
         row.sale_multi_day_prices = data.saleMultiDayPrices
         await self.session.commit()
         await self.session.refresh(row)
@@ -361,6 +382,7 @@ class PricingRepository(BaseRepository):
     async def update_settings(self, data: PricingSettingsUpdateRequest) -> None:
         for key, value in [
             ("is_sale_active", str(data.isSaleActive).lower()),
+            ("is_sauna_bath_tub_combo_active", str(data.isSaunaBathTubComboActive).lower()),
         ]:
             row = await self.session.scalar(
                 select(PricingSettingsBase).where(PricingSettingsBase.key == key)
