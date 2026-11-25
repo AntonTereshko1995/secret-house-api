@@ -1,7 +1,7 @@
 from datetime import date, datetime
 
 from db.models.base import Base
-from sqlalchemy import Boolean, Date, DateTime, Float, Integer, JSON, String
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 
@@ -19,6 +19,9 @@ class PromocodeBase(Base):
     applicable_tariffs: Mapped[str | None] = mapped_column(JSON, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_single_use: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("user.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
     def __repr__(self) -> str:

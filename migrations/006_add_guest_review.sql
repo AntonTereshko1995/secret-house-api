@@ -1,14 +1,20 @@
--- Migration 006: partial unique index for guest_review.booking_id
--- The table itself is created by SQLAlchemy create_all (via GuestReviewBase).
--- This migration adds the partial unique index (not supported by create_all).
--- Wrapped in IF EXISTS check because migrations run BEFORE create_all on first deploy.
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.tables WHERE table_name = 'guest_review'
-    ) THEN
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_guest_review_booking_id
-            ON guest_review(booking_id) WHERE booking_id IS NOT NULL;
-    END IF;
-END
-$$;
+-- Migration 006: guest_review table (one review per booking)
+-- Created here, not by create_all, because SQL migrations run BEFORE create_all
+-- on first deploy. Idempotent: safe to re-run on every startup.
+CREATE TABLE IF NOT EXISTS guest_review (
+    id SERIAL PRIMARY KEY,
+    booking_id INTEGER NOT NULL REFERENCES booking(id),
+    rating_expectations SMALLINT NOT NULL,
+    rating_comfort SMALLINT NOT NULL,
+    rating_cleanliness SMALLINT NOT NULL,
+    rating_communication SMALLINT NOT NULL,
+    rating_location SMALLINT NOT NULL,
+    rating_recommendation SMALLINT NOT NULL,
+    liked_most TEXT NOT NULL,
+    improvement TEXT NOT NULL,
+    public_review TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_guest_review_booking_id
+    ON guest_review(booking_id);
