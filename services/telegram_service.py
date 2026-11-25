@@ -9,6 +9,7 @@ import logging
 import httpx
 from db.models.booking import BookingBase
 from db.models.gift import GiftBase
+from db.models.review import GuestReviewBase
 from db.models.tariff import Tariff
 
 _log = logging.getLogger(__name__)
@@ -243,6 +244,30 @@ class TelegramService:
             ok = await self._send_gift_to_bot(gift_id, filename, content, content_type)
             if not ok:
                 _log.warning("on_gift_purchased: bot unavailable, gift_id=%s", gift_id)
+
+    async def on_review_submitted(
+        self,
+        *,
+        booking: BookingBase,
+        review: GuestReviewBase,
+        promo_code: str,
+    ) -> None:
+        """Send a submitted guest review to the admin chat (via the bot)."""
+        text = (
+            "Новый отзыв клиента\n\n"
+            f"Пользователь: {_contact_from_booking(booking)}\n\n"
+            f"1. Ожидания от отдыха: {review.rating_expectations}/10\n"
+            f"2. Уровень комфорта: {review.rating_comfort}/10\n"
+            f"3. Чистота и уборка: {review.rating_cleanliness}/10\n"
+            f"4. Общение и поддержка: {review.rating_communication}/10\n"
+            f"5. Расположение дома: {review.rating_location}/10\n"
+            f"6. Рекомендация друзьям: {review.rating_recommendation}/10\n\n"
+            f"7. Что понравилось:\n{review.liked_most}\n\n"
+            f"8. Что улучшить:\n{review.improvement}\n\n"
+            f"9. Публичный отзыв:\n{review.public_review}\n\n"
+            f"Промокод: {promo_code}"
+        )
+        await self._notify_inform(text)
 
     # ------------------------------------------------------------------
     # Low-level: bot HTTP server

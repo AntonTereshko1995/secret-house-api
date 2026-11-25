@@ -1,11 +1,10 @@
-from typing import Optional
+from datetime import date
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class ReviewSubmitRequest(BaseModel):
-    bookingPublicId: Optional[str] = None
-    contact: Optional[str] = None
+    bookingPublicId: str
 
     ratingExpectations: int = Field(ge=1, le=10)
     ratingComfort: int = Field(ge=1, le=10)
@@ -18,14 +17,17 @@ class ReviewSubmitRequest(BaseModel):
     improvement: str
     publicReview: str
 
-    @model_validator(mode="after")
-    def require_booking_or_contact(self) -> "ReviewSubmitRequest":
-        if not self.bookingPublicId and not self.contact:
-            raise ValueError("Укажите ID бронирования или контакт")
-        return self
+    @field_validator("likedMost", "improvement", "publicReview")
+    @classmethod
+    def non_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Поле не может быть пустым")
+        return v
 
 
 class ReviewSubmitResponse(BaseModel):
     ok: bool
     reviewId: int
     rewardPromoCode: str
+    validUntil: date

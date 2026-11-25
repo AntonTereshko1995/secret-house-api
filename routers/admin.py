@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from db.database import get_session
+from db.models.booking import BookingBase
 from dependencies import TelegramDep
 from repositories.booking_repository import (
     BookingRepository,
@@ -25,7 +26,6 @@ from repositories.booking_repository import (
 )
 from repositories.pricing_repository import PricingRepository, _to_record
 from repositories.promocode_repository import PromocodeRepository, _to_promo_read
-from repositories.review_repository import ReviewRepository
 from schemas.admin import (
     AdminBookingDetailResponse,
     AdminBookingsPageResponse,
@@ -614,11 +614,8 @@ async def admin_update_tariff_pricing(
 
 
 def _to_admin_review_dto(
-    r, booking_contact: str | None = None
+    r, booking: BookingBase | None = None
 ) -> AdminReviewDTO:
-    from db.models.review import GuestReviewBase as _R
-
-    r: _R
     ratings = [
         r.rating_expectations,
         r.rating_comfort,
@@ -631,8 +628,8 @@ def _to_admin_review_dto(
     return AdminReviewDTO(
         reviewId=r.id,
         bookingId=r.booking_id,
-        contact=r.contact or booking_contact,
-        submittedAt=r.submitted_at.isoformat(),
+        contact=(booking.user.contact if booking and booking.user else None),
+        submittedAt=r.created_at.isoformat(),
         ratingExpectations=r.rating_expectations,
         ratingComfort=r.rating_comfort,
         ratingCleanliness=r.rating_cleanliness,
@@ -643,7 +640,11 @@ def _to_admin_review_dto(
         likedMost=r.liked_most,
         improvement=r.improvement,
         publicReview=r.public_review,
-        rewardPromoCode=r.reward_promo_code.upper() if r.reward_promo_code else None,
+        rewardPromoCode=(
+            booking.reward_promo_code.upper()
+            if booking and booking.reward_promo_code
+            else None
+        ),
     )
 
 
@@ -657,14 +658,13 @@ async def admin_get_reviews(
     """Return paginated guest reviews."""
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
-    from db.models.booking import BookingBase
-    from db.models.user import UserBase  # noqa: F401
+    from repositories.review_repository import ReviewRepository
 
     repo = ReviewRepository(session)
     reviews, total = await repo.admin_get_all(page=page, page_size=page_size)
 
-    booking_contacts: dict[int, str] = {}
-    booking_ids = [r.booking_id for r in reviews if r.booking_id is not None]
+    bookings: dict[int, BookingBase] = {}
+    booking_ids = [r.booking_id for r in reviews]
     if booking_ids:
         rows = await session.scalars(
             select(BookingBase)
@@ -672,8 +672,7 @@ async def admin_get_reviews(
             .where(BookingBase.id.in_(booking_ids))
         )
         for b in rows:
-            if b.user and b.user.contact:
-                booking_contacts[b.id] = b.user.contact
+            bookings[b.id] = b
 
-    items = [_to_admin_review_dto(r, booking_contacts.get(r.booking_id)) for r in reviews]
+    items = [_to_admin_review_dto(r, bookings.get(r.booking_id)) for r in reviews]
     return AdminReviewsPageResponse(items=items, total=total, page=page, pageSize=page_size)

@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Sequence
 
 from sqlalchemy import func, select
@@ -16,24 +15,19 @@ class ReviewRepository(BaseRepository):
     async def create(
         self,
         data: ReviewSubmitRequest,
-        booking_id: int | None,
-        contact: str | None,
-        reward_promo_code: str,
+        booking_id: int,
     ) -> GuestReviewBase:
         review = GuestReviewBase(
             booking_id=booking_id,
-            contact=contact,
-            reward_promo_code=reward_promo_code,
             rating_expectations=data.ratingExpectations,
             rating_comfort=data.ratingComfort,
             rating_cleanliness=data.ratingCleanliness,
             rating_communication=data.ratingCommunication,
             rating_location=data.ratingLocation,
             rating_recommendation=data.ratingRecommendation,
-            liked_most=data.likedMost.strip(),
-            improvement=data.improvement.strip(),
-            public_review=data.publicReview.strip(),
-            submitted_at=datetime.now(),
+            liked_most=data.likedMost,
+            improvement=data.improvement,
+            public_review=data.publicReview,
         )
         self.session.add(review)
         await self.session.flush()
@@ -47,8 +41,9 @@ class ReviewRepository(BaseRepository):
         ) or 0
         result = await self.session.scalars(
             select(GuestReviewBase)
-            .order_by(GuestReviewBase.submitted_at.desc())
+            .order_by(GuestReviewBase.created_at.desc())
             .limit(page_size)
             .offset((page - 1) * page_size)
         )
         return result.all(), count
+

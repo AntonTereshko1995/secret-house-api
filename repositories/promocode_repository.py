@@ -3,6 +3,7 @@ from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from db.models.promocode import PromocodeBase
 from repositories.base import BaseRepository
@@ -11,6 +12,20 @@ from schemas.promocode import PromoAdminRead, PromoCreateRequest
 
 PROMOCODE_TYPE_BOOKING_DATES = 1
 PROMOCODE_TYPE_USAGE_PERIOD = 2
+
+PERSONAL_PROMO_MESSAGE = (
+    "Этот промокод именной: он действует только для контакта, "
+    "с которого оставлен отзыв"
+)
+PROMO_USED_MESSAGE = "Промокод уже использован"
+
+
+class PromocodePersonalError(Exception):
+    """The promocode belongs to a different user's contact."""
+
+
+class PromocodeAlreadyUsedError(Exception):
+    """The promocode is inactive (already used)."""
 
 
 def _to_promo_read(p: PromocodeBase) -> PromoAdminRead:
@@ -44,22 +59,35 @@ class PromocodeRepository(BaseRepository):
         name: str,
         booking_date: date,
         tariff_str: str,
-    ) -> tuple[bool, str, float, int | None]:
+        contact: str | None = None,
+    ) -> tuple[bool, str, float, int | None, bool]:
         """
         Validate a promocode for the given booking date and tariff.
 
         Returns:
-            (is_valid, message, discount_percentage, promocode_id)
+            (is_valid, message, discount_percentage, promocode_id, is_personal)
         """
         promo = await self.session.scalar(
-            select(PromocodeBase).where(
+            select(PromocodeBase)
+            .options(selectinload(PromocodeBase.user))
+            .where(
                 PromocodeBase.name == name.lower(),
                 PromocodeBase.is_active == True,  # noqa: E712
             )
         )
 
         if not promo:
-            return (False, "Промокод не найден", 0.0, None)
+            return (False, "Промокод не найден", 0.0, None, False)
+
+        is_personal = promo.user_id is not None
+
+        # Personal (review reward) codes are bound to the reviewer's user.
+        if is_personal:
+            if contact is not None and contact.strip():
+                user_contact = promo.user.contact if promo.user else None
+                if user_contact != contact.strip():
+                    return (False, PERSONAL_PROMO_MESSAGE, 0.0, None, False)
+            # Contact not provided: still valid by the other rules, flagged personal.
 
         today = date.today()
         tariff_int = TARIFF_ID_TO_INT.get(tariff_str)
@@ -72,12 +100,13 @@ class PromocodeRepository(BaseRepository):
                     "Промокод недействителен в выбранную дату бронирования",
                     0.0,
                     None,
+                    False,
                 )
 
         # Type 2: current date must fall within usage period
         elif promo.promocode_type == PROMOCODE_TYPE_USAGE_PERIOD:
             if not (promo.date_from <= today <= promo.date_to):
-                return (False, "Промокод недействителен в данный период", 0.0, None)
+                return (False, "Промокод недействителен в данный период", 0.0, None, False)
 
         # Tariff validation (null = all tariffs allowed)
         if promo.applicable_tariffs and tariff_int is not None:
@@ -92,9 +121,25 @@ class PromocodeRepository(BaseRepository):
                     "Промокод не применим к выбранному тарифу",
                     0.0,
                     None,
+                    False,
                 )
 
-        return (True, "Промокод применён!", promo.discount_percentage, promo.id)
+        return (True, "Промокод применён!", promo.discount_percentage, promo.id, is_personal)
+
+    async def get_by_name(self, name: str) -> PromocodeBase | None:
+        return await self.session.scalar(
+            select(PromocodeBase).where(PromocodeBase.name == name.lower())
+        )
+
+    async def get_by_names(self, names: list[str]) -> dict[str, PromocodeBase]:
+        """Load several promocodes in one query (avoids N+1 for booking lists)."""
+        clean = [n.lower() for n in names if n]
+        if not clean:
+            return {}
+        result = await self.session.scalars(
+            select(PromocodeBase).where(PromocodeBase.name.in_(clean))
+        )
+        return {p.name: p for p in result}
 
     async def admin_list(self, status: str = "all") -> list[PromocodeBase]:
         """Return all promos, optionally filtered by is_active."""
@@ -128,7 +173,11 @@ class PromocodeRepository(BaseRepository):
         return promo
 
     async def create_review_reward(
-        self, promo_name: str, date_from: date, date_to: date
+        self,
+        promo_name: str,
+        date_from: date,
+        date_to: date,
+        user_id: int,
     ) -> PromocodeBase:
         """Create a single-use 10% review reward promo code (USAGE_PERIOD, type=2)."""
         promo = PromocodeBase(
@@ -140,6 +189,7 @@ class PromocodeRepository(BaseRepository):
             applicable_tariffs=None,
             is_active=True,
             is_single_use=True,
+            user_id=user_id,
         )
         self.session.add(promo)
         await self.session.flush()

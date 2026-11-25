@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from db.models.base import Base
 from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, JSON, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
 class PromocodeBase(Base):
@@ -23,6 +23,8 @@ class PromocodeBase(Base):
         ForeignKey("user.id"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+    user = relationship("UserBase")
 
     def __repr__(self) -> str:
         return (
