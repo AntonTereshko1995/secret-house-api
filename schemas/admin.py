@@ -191,3 +191,33 @@ class AdminStatisticsResponse(BaseModel):
     users: AdminStatsUsers
     gifts: AdminStatsGifts
     generatedAt: datetime
+
+
+# ---------------------------------------------------------------------------
+# Review response models
+# ---------------------------------------------------------------------------
+
+
+class AdminReviewDTO(BaseModel):
+    reviewId: int
+    bookingId: Optional[int] = None
+    contact: Optional[str] = None
+    submittedAt: str
+    ratingExpectations: int
+    ratingComfort: int
+    ratingCleanliness: int
+    ratingCommunication: int
+    ratingLocation: int
+    ratingRecommendation: int
+    avgRating: float
+    likedMost: str
+    improvement: str
+    publicReview: str
+    rewardPromoCode: Optional[str] = None
+
+
+class AdminReviewsPageResponse(BaseModel):
+    items: list[AdminReviewDTO]
+    total: int
+    page: int
+    pageSize: int

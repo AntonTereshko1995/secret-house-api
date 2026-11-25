@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import and_, select
 
-from config import settings
 from db.database import get_session
 from db.models.booking import BookingBase
 from dependencies import TelegramDep
@@ -17,7 +16,6 @@ from repositories.booking_repository import (
     _to_minsk_naive,
 )
 from schemas.booking import (
-    TARIFF_ID_TO_INT,
     AvailabilityRequest,
     AvailabilityResponse,
     BookedPeriodResponse,

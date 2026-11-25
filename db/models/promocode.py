@@ -18,6 +18,7 @@ class PromocodeBase(Base):
     # null = ALL tariffs, or JSON array like [0, 1, 2] for specific tariff values
     applicable_tariffs: Mapped[str | None] = mapped_column(JSON, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_single_use: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
     def __repr__(self) -> str:

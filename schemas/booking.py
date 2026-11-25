@@ -145,6 +145,8 @@ class BookingDetailResponse(BaseModel):
     canCancel: bool
     canPay: bool
     bedroomType: Optional[str] = None
+    feedbackSubmitted: bool = False
+    rewardPromoCode: Optional[str] = None
 
 
 class BookingUpdateTariffRequest(BaseModel):

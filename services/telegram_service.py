@@ -75,12 +75,12 @@ def _booking_text(booking: BookingBase, header: str, *, contact: str | None = No
         f"Тариф: {tariff_name}",
         f"Стоимость: {booking.price} руб.",
         f"Предоплата: {booking.prepayment_price} руб.",
-        *([f"Фотосессия: Да"] if booking.has_photoshoot else []),
-        *([f"Сауна: Да"] if booking.has_sauna else []),
-        *([f"Горячий чан: Да"] if booking.has_bath_tub else []),
-        *([f"Белая спальня: Да"] if booking.has_white_bedroom else []),
-        *([f"Зеленая спальня: Да"] if booking.has_green_bedroom else []),
-        *([f"Секретная комната: Да"] if booking.has_secret_room else []),
+        *(["Фотосессия: Да"] if booking.has_photoshoot else []),
+        *(["Сауна: Да"] if booking.has_sauna else []),
+        *(["Горячий чан: Да"] if booking.has_bath_tub else []),
+        *(["Белая спальня: Да"] if booking.has_white_bedroom else []),
+        *(["Зеленая спальня: Да"] if booking.has_green_bedroom else []),
+        *(["Секретная комната: Да"] if booking.has_secret_room else []),
         f"Количество гостей: {booking.number_of_guests}",
     ]
     if booking.comment:

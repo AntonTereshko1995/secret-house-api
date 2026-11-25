@@ -127,6 +127,24 @@ class PromocodeRepository(BaseRepository):
         await self.session.refresh(promo)
         return promo
 
+    async def create_review_reward(
+        self, promo_name: str, date_from: date, date_to: date
+    ) -> PromocodeBase:
+        """Create a single-use 10% review reward promo code (USAGE_PERIOD, type=2)."""
+        promo = PromocodeBase(
+            name=promo_name,
+            promocode_type=2,
+            date_from=date_from,
+            date_to=date_to,
+            discount_percentage=10.0,
+            applicable_tariffs=None,
+            is_active=True,
+            is_single_use=True,
+        )
+        self.session.add(promo)
+        await self.session.flush()
+        return promo
+
     async def admin_update(self, promo_id: int, data: PromoCreateRequest) -> PromocodeBase:
         promo = await self.admin_get_by_id(promo_id)
         if not promo:

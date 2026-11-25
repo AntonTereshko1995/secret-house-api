@@ -100,6 +100,8 @@ def _to_booking_detail(b: BookingBase) -> BookingDetailResponse:
         canCancel=can_cancel,
         canPay=can_pay,
         bedroomType=bedroom_type,
+        feedbackSubmitted=b.feedback_submitted,
+        rewardPromoCode=b.reward_promo_code,
     )
 
 
@@ -339,6 +341,11 @@ class BookingRepository(BaseRepository):
 
         if data.promocodeId:
             booking.promocode_id = data.promocodeId
+            from db.models.promocode import PromocodeBase as _Promo
+
+            promo = await self.session.get(_Promo, data.promocodeId)
+            if promo and promo.is_single_use:
+                promo.is_active = False
 
         if data.giftId:
             booking.gift_id = data.giftId

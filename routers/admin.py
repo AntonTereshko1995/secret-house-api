@@ -25,12 +25,15 @@ from repositories.booking_repository import (
 )
 from repositories.pricing_repository import PricingRepository, _to_record
 from repositories.promocode_repository import PromocodeRepository, _to_promo_read
+from repositories.review_repository import ReviewRepository
 from schemas.admin import (
     AdminBookingDetailResponse,
     AdminBookingsPageResponse,
     AdminLoginRequest,
     AdminLoginResponse,
     AdminRescheduleRequest,
+    AdminReviewDTO,
+    AdminReviewsPageResponse,
     AdminStatisticsResponse,
     AdminUpdatePriceRequest,
     AdminUpdateResponse,
@@ -603,3 +606,74 @@ async def admin_update_tariff_pricing(
     await repo.upsert(tariff_id, body)
     _log.info("admin_update_pricing tariff_id=%s", tariff_id)
     return PricingUpdateResponse(tariffId=tariff_id, message="Цены обновлены")
+
+
+# ---------------------------------------------------------------------------
+# Guest reviews
+# ---------------------------------------------------------------------------
+
+
+def _to_admin_review_dto(
+    r, booking_contact: str | None = None
+) -> AdminReviewDTO:
+    from db.models.review import GuestReviewBase as _R
+
+    r: _R
+    ratings = [
+        r.rating_expectations,
+        r.rating_comfort,
+        r.rating_cleanliness,
+        r.rating_communication,
+        r.rating_location,
+        r.rating_recommendation,
+    ]
+    avg = round(sum(ratings) / 6, 1)
+    return AdminReviewDTO(
+        reviewId=r.id,
+        bookingId=r.booking_id,
+        contact=r.contact or booking_contact,
+        submittedAt=r.submitted_at.isoformat(),
+        ratingExpectations=r.rating_expectations,
+        ratingComfort=r.rating_comfort,
+        ratingCleanliness=r.rating_cleanliness,
+        ratingCommunication=r.rating_communication,
+        ratingLocation=r.rating_location,
+        ratingRecommendation=r.rating_recommendation,
+        avgRating=avg,
+        likedMost=r.liked_most,
+        improvement=r.improvement,
+        publicReview=r.public_review,
+        rewardPromoCode=r.reward_promo_code.upper() if r.reward_promo_code else None,
+    )
+
+
+@router.get("/reviews", response_model=AdminReviewsPageResponse)
+async def admin_get_reviews(
+    _: AdminAuth,
+    session: DbSession,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+):
+    """Return paginated guest reviews."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from db.models.booking import BookingBase
+    from db.models.user import UserBase  # noqa: F401
+
+    repo = ReviewRepository(session)
+    reviews, total = await repo.admin_get_all(page=page, page_size=page_size)
+
+    booking_contacts: dict[int, str] = {}
+    booking_ids = [r.booking_id for r in reviews if r.booking_id is not None]
+    if booking_ids:
+        rows = await session.scalars(
+            select(BookingBase)
+            .options(selectinload(BookingBase.user))
+            .where(BookingBase.id.in_(booking_ids))
+        )
+        for b in rows:
+            if b.user and b.user.contact:
+                booking_contacts[b.id] = b.user.contact
+
+    items = [_to_admin_review_dto(r, booking_contacts.get(r.booking_id)) for r in reviews]
+    return AdminReviewsPageResponse(items=items, total=total, page=page, pageSize=page_size)
