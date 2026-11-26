@@ -1,5 +1,5 @@
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Sequence
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,9 +46,9 @@ class ReviewRepository(BaseRepository):
     ) -> tuple[Sequence[GuestReviewBase], int]:
         query = select(GuestReviewBase)
         if published == "true":
-            query = query.where(GuestReviewBase.is_published == True)  # noqa: E712
+            query = query.where(GuestReviewBase.is_published.is_(True))
         elif published == "false":
-            query = query.where(GuestReviewBase.is_published == False)  # noqa: E712
+            query = query.where(GuestReviewBase.is_published.is_(False))
         count = await self.session.scalar(
             select(func.count()).select_from(query.subquery())
         ) or 0
@@ -65,7 +65,7 @@ class ReviewRepository(BaseRepository):
         reviews = list(
             await self.session.scalars(
                 select(GuestReviewBase)
-                .where(GuestReviewBase.is_published == True)  # noqa: E712
+                .where(GuestReviewBase.is_published.is_(True))
                 .order_by(GuestReviewBase.published_at.desc())
                 .limit(limit)
             )
@@ -84,7 +84,7 @@ class ReviewRepository(BaseRepository):
         total = await self.session.scalar(
             select(func.count())
             .select_from(GuestReviewBase)
-            .where(GuestReviewBase.is_published == True)  # noqa: E712
+            .where(GuestReviewBase.is_published.is_(True))
         ) or 0
         rating_sum = await self.session.scalar(
             select(
@@ -101,7 +101,7 @@ class ReviewRepository(BaseRepository):
                 )
             )
             .select_from(GuestReviewBase)
-            .where(GuestReviewBase.is_published == True)  # noqa: E712
+            .where(GuestReviewBase.is_published.is_(True))
         ) or 0
         average = round(rating_sum / (total * 6), 1) if total else 0.0
         return total, average

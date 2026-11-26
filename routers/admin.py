@@ -14,7 +14,9 @@ from fastapi import (
     Query,
     status as http_status,
 )
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from config import settings
 from db.database import get_session
@@ -26,6 +28,7 @@ from repositories.booking_repository import (
 )
 from repositories.pricing_repository import PricingRepository, _to_record
 from repositories.promocode_repository import PromocodeRepository, _to_promo_read
+from repositories.review_repository import ReviewRepository
 from schemas.admin import (
     AdminBookingDetailResponse,
     AdminBookingsPageResponse,
@@ -673,10 +676,6 @@ async def admin_get_reviews(
     published: str = Query(default="all", description="all|true|false"),
 ):
     """Return paginated guest reviews, optionally filtered by publish state."""
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-    from repositories.review_repository import ReviewRepository
-
     repo = ReviewRepository(session)
     reviews, total = await repo.admin_get_all(
         page=page, page_size=page_size, published=published
@@ -708,10 +707,6 @@ async def admin_update_review_published(
     session: DbSession,
 ):
     """Publish or hide a guest review."""
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-    from repositories.review_repository import ReviewRepository
-
     repo = ReviewRepository(session)
     review = await repo.set_published(review_id, body.isPublished)
     if not review:
