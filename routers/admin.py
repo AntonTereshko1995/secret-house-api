@@ -12,6 +12,8 @@ from fastapi import (
     Header,
     HTTPException,
     Query,
+)
+from fastapi import (
     status as http_status,
 )
 from sqlalchemy import select
@@ -619,7 +621,9 @@ async def admin_update_tariff_pricing(
 
 
 def _to_admin_review_dto(
-    r, booking: BookingBase | None = None
+    r,
+    booking: BookingBase | None = None,
+    reward_promo=None,
 ) -> AdminReviewDTO:
     ratings = [
         r.rating_expectations,
@@ -632,10 +636,10 @@ def _to_admin_review_dto(
     avg = round(sum(ratings) / 6, 1)
 
     reward_status: str | None = None
-    if booking and booking.promocode:
-        if not booking.promocode.is_active:
+    if reward_promo is not None:
+        if not reward_promo.is_active:
             reward_status = "used"
-        elif booking.promocode.date_to < today_minsk():
+        elif reward_promo.date_to < today_minsk():
             reward_status = "expired"
         else:
             reward_status = "active"
@@ -677,6 +681,7 @@ async def admin_get_reviews(
 ):
     """Return paginated guest reviews, optionally filtered by publish state."""
     repo = ReviewRepository(session)
+    promo_repo = PromocodeRepository(session)
     reviews, total = await repo.admin_get_all(
         page=page, page_size=page_size, published=published
     )
@@ -686,16 +691,24 @@ async def admin_get_reviews(
     if booking_ids:
         rows = await session.scalars(
             select(BookingBase)
-            .options(
-                selectinload(BookingBase.user),
-                selectinload(BookingBase.promocode),
-            )
+            .options(selectinload(BookingBase.user))
             .where(BookingBase.id.in_(booking_ids))
         )
         for b in rows:
             bookings[b.id] = b
 
-    items = [_to_admin_review_dto(r, bookings.get(r.booking_id)) for r in reviews]
+    reward_promos = await promo_repo.get_by_names(
+        [b.reward_promo_code for b in bookings.values() if b.reward_promo_code]
+    )
+    items = []
+    for r in reviews:
+        booking = bookings.get(r.booking_id)
+        reward_promo = (
+            reward_promos.get(booking.reward_promo_code)
+            if booking and booking.reward_promo_code
+            else None
+        )
+        items.append(_to_admin_review_dto(r, booking, reward_promo))
     return AdminReviewsPageResponse(items=items, total=total, page=page, pageSize=page_size)
 
 
@@ -708,6 +721,7 @@ async def admin_update_review_published(
 ):
     """Publish or hide a guest review."""
     repo = ReviewRepository(session)
+    promo_repo = PromocodeRepository(session)
     review = await repo.set_published(review_id, body.isPublished)
     if not review:
         raise HTTPException(
@@ -716,15 +730,17 @@ async def admin_update_review_published(
 
     booking = await session.scalar(
         select(BookingBase)
-        .options(
-            selectinload(BookingBase.user),
-            selectinload(BookingBase.promocode),
-        )
+        .options(selectinload(BookingBase.user))
         .where(BookingBase.id == review.booking_id)
+    )
+    reward_promo = (
+        await promo_repo.get_by_name(booking.reward_promo_code)
+        if booking and booking.reward_promo_code
+        else None
     )
     _log.info(
         "admin_review_published id=%s isPublished=%s",
         review_id,
         body.isPublished,
     )
-    return _to_admin_review_dto(review, booking)
+    return _to_admin_review_dto(review, booking, reward_promo)
