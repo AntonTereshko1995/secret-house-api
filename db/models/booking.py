@@ -48,6 +48,7 @@ class BookingBase(Base):
     source: Mapped[str | None] = mapped_column(
         String, nullable=True
     )  # "web" | "telegram"
+    reward_promo_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     user = relationship("UserBase")
     gift = relationship("GiftBase")

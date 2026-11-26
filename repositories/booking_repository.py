@@ -10,10 +10,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
 from db.models.booking import BookingBase
 from db.models.gift import GiftBase
+from db.models.promocode import PromocodeBase
 from db.models.tariff import Tariff
 from db.models.user import UserBase
 from repositories.base import BaseRepository
+from repositories.promocode_repository import (
+    PromocodeAlreadyUsedError,
+    PromocodePersonalError,
+)
 from repositories.user_repository import UserRepository
+from services.review_eligibility import review_eligibility, today_minsk
 from schemas.admin import (
     AdminBookingDetailResponse,
     AdminStatsDow,
@@ -48,9 +54,12 @@ def _to_minsk_naive(dt: datetime) -> datetime:
     return dt.replace(tzinfo=None)
 
 
-def _to_booking_detail(b: BookingBase) -> BookingDetailResponse:
+def _to_booking_detail(
+    b: BookingBase, reward_promo: PromocodeBase | None = None
+) -> BookingDetailResponse:
     """Map ORM model to API response DTO."""
     now_naive = datetime.now()
+    today = today_minsk()
     tariff_str = TARIFF_INT_TO_STR.get(b.tariff.value, "12h-standard")
 
     wine_list = (
@@ -72,6 +81,22 @@ def _to_booking_detail(b: BookingBase) -> BookingDetailResponse:
     can_reschedule = can_modify and not b.is_date_changed
     can_cancel = is_future and not_closed
     can_pay = not b.is_prepaymented and not_closed
+
+    can_review, deadline = review_eligibility(b, today)
+    review_deadline = (
+        deadline if (not b.is_canceled and b.is_prepaymented) else None
+    )
+
+    reward_status: str | None = None
+    reward_valid_until: date | None = None
+    if reward_promo is not None:
+        reward_valid_until = reward_promo.date_to
+        if not reward_promo.is_active:
+            reward_status = "used"
+        elif reward_promo.date_to < today:
+            reward_status = "expired"
+        else:
+            reward_status = "active"
 
     return BookingDetailResponse(
         bookingId=b.id,
@@ -100,6 +125,12 @@ def _to_booking_detail(b: BookingBase) -> BookingDetailResponse:
         canCancel=can_cancel,
         canPay=can_pay,
         bedroomType=bedroom_type,
+        feedbackSubmitted=b.feedback_submitted,
+        rewardPromoCode=b.reward_promo_code.upper() if b.reward_promo_code else None,
+        canReview=can_review,
+        reviewDeadline=review_deadline,
+        rewardPromoStatus=reward_status,
+        rewardPromoValidUntil=reward_valid_until,
     )
 
 
@@ -338,7 +369,18 @@ class BookingRepository(BaseRepository):
         )
 
         if data.promocodeId:
+            promo = await self.session.scalar(
+                select(PromocodeBase)
+                .where(PromocodeBase.id == data.promocodeId)
+                .with_for_update()
+            )
+            if not promo or not promo.is_active:
+                raise PromocodeAlreadyUsedError()
+            if promo.user_id is not None and promo.user_id != user.id:
+                raise PromocodePersonalError()
             booking.promocode_id = data.promocodeId
+            if promo.is_single_use:
+                promo.is_active = False
 
         if data.giftId:
             booking.gift_id = data.giftId

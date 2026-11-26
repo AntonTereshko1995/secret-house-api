@@ -22,15 +22,16 @@ async def validate_promocode(body: PromoValidateRequest, session: DbSession):
     Returns validity, discount percentage, and a user-facing message.
     """
     repo = PromocodeRepository(session)
-    is_valid, message, discount_pct, promo_id = await repo.validate(
+    is_valid, message, discount_pct, promo_id, is_personal = await repo.validate(
         name=body.code,
         booking_date=body.bookingDate,
         tariff_str=body.tariff,
+        contact=body.contact,
     )
 
     _log.info(
-        "promocode_validate code=%s tariff=%s date=%s valid=%s discount=%s",
-        body.code, body.tariff, body.bookingDate, is_valid, discount_pct,
+        "promocode_validate code=%s tariff=%s date=%s valid=%s discount=%s personal=%s",
+        body.code, body.tariff, body.bookingDate, is_valid, discount_pct, is_personal,
     )
 
     return PromoValidateResponse(
@@ -40,4 +41,5 @@ async def validate_promocode(body: PromoValidateRequest, session: DbSession):
         discount=0.0,
         message=message,
         promocodeId=promo_id,
+        isPersonal=is_personal,
     )

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 from uuid import UUID
 
@@ -145,6 +145,12 @@ class BookingDetailResponse(BaseModel):
     canCancel: bool
     canPay: bool
     bedroomType: Optional[str] = None
+    feedbackSubmitted: bool = False
+    rewardPromoCode: Optional[str] = None
+    canReview: bool = False
+    reviewDeadline: Optional[date] = None
+    rewardPromoStatus: Optional[str] = None
+    rewardPromoValidUntil: Optional[date] = None
 
 
 class BookingUpdateTariffRequest(BaseModel):

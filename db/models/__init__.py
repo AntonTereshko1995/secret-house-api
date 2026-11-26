@@ -6,3 +6,4 @@ from db.models.gift import GiftBase  # noqa: F401
 from db.models.promocode import PromocodeBase  # noqa: F401
 from db.models.booking import BookingBase  # noqa: F401
 from db.models.pricing import TariffPricingBase, PricingSettingsBase  # noqa: F401
+from db.models.review import GuestReviewBase  # noqa: F401

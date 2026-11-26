@@ -12,12 +12,17 @@ from fastapi import (
     Header,
     HTTPException,
     Query,
+)
+from fastapi import (
     status as http_status,
 )
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from config import settings
 from db.database import get_session
+from db.models.booking import BookingBase
 from dependencies import TelegramDep
 from repositories.booking_repository import (
     BookingRepository,
@@ -25,12 +30,16 @@ from repositories.booking_repository import (
 )
 from repositories.pricing_repository import PricingRepository, _to_record
 from repositories.promocode_repository import PromocodeRepository, _to_promo_read
+from repositories.review_repository import ReviewRepository
 from schemas.admin import (
     AdminBookingDetailResponse,
     AdminBookingsPageResponse,
     AdminLoginRequest,
     AdminLoginResponse,
     AdminRescheduleRequest,
+    AdminReviewDTO,
+    AdminReviewPublishRequest,
+    AdminReviewsPageResponse,
     AdminStatisticsResponse,
     AdminUpdatePriceRequest,
     AdminUpdateResponse,
@@ -45,6 +54,7 @@ from schemas.pricing import (
     TariffPriceUpdateRequest,
 )
 from schemas.promocode import PromoAdminRead, PromoCreateRequest
+from services.review_eligibility import today_minsk
 
 _log = logging.getLogger(__name__)
 
@@ -603,3 +613,134 @@ async def admin_update_tariff_pricing(
     await repo.upsert(tariff_id, body)
     _log.info("admin_update_pricing tariff_id=%s", tariff_id)
     return PricingUpdateResponse(tariffId=tariff_id, message="Цены обновлены")
+
+
+# ---------------------------------------------------------------------------
+# Guest reviews
+# ---------------------------------------------------------------------------
+
+
+def _to_admin_review_dto(
+    r,
+    booking: BookingBase | None = None,
+    reward_promo=None,
+) -> AdminReviewDTO:
+    ratings = [
+        r.rating_expectations,
+        r.rating_comfort,
+        r.rating_cleanliness,
+        r.rating_communication,
+        r.rating_location,
+        r.rating_recommendation,
+    ]
+    avg = round(sum(ratings) / 6, 1)
+
+    reward_status: str | None = None
+    if reward_promo is not None:
+        if not reward_promo.is_active:
+            reward_status = "used"
+        elif reward_promo.date_to < today_minsk():
+            reward_status = "expired"
+        else:
+            reward_status = "active"
+
+    return AdminReviewDTO(
+        reviewId=r.id,
+        bookingId=r.booking_id,
+        bookingPublicId=str(booking.public_id) if booking else None,
+        contact=(booking.user.contact if booking and booking.user else None),
+        submittedAt=r.created_at.isoformat(),
+        ratingExpectations=r.rating_expectations,
+        ratingComfort=r.rating_comfort,
+        ratingCleanliness=r.rating_cleanliness,
+        ratingCommunication=r.rating_communication,
+        ratingLocation=r.rating_location,
+        ratingRecommendation=r.rating_recommendation,
+        avgRating=avg,
+        likedMost=r.liked_most,
+        improvement=r.improvement,
+        publicReview=r.public_review,
+        rewardPromoCode=(
+            booking.reward_promo_code.upper()
+            if booking and booking.reward_promo_code
+            else None
+        ),
+        rewardPromoStatus=reward_status,
+        isPublished=r.is_published,
+        publishedAt=r.published_at.isoformat() if r.published_at else None,
+    )
+
+
+@router.get("/reviews", response_model=AdminReviewsPageResponse)
+async def admin_get_reviews(
+    _: AdminAuth,
+    session: DbSession,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    published: str = Query(default="all", description="all|true|false"),
+):
+    """Return paginated guest reviews, optionally filtered by publish state."""
+    repo = ReviewRepository(session)
+    promo_repo = PromocodeRepository(session)
+    reviews, total = await repo.admin_get_all(
+        page=page, page_size=page_size, published=published
+    )
+
+    bookings: dict[int, BookingBase] = {}
+    booking_ids = [r.booking_id for r in reviews]
+    if booking_ids:
+        rows = await session.scalars(
+            select(BookingBase)
+            .options(selectinload(BookingBase.user))
+            .where(BookingBase.id.in_(booking_ids))
+        )
+        for b in rows:
+            bookings[b.id] = b
+
+    reward_promos = await promo_repo.get_by_names(
+        [b.reward_promo_code for b in bookings.values() if b.reward_promo_code]
+    )
+    items = []
+    for r in reviews:
+        booking = bookings.get(r.booking_id)
+        reward_promo = (
+            reward_promos.get(booking.reward_promo_code)
+            if booking and booking.reward_promo_code
+            else None
+        )
+        items.append(_to_admin_review_dto(r, booking, reward_promo))
+    return AdminReviewsPageResponse(items=items, total=total, page=page, pageSize=page_size)
+
+
+@router.patch("/reviews/{review_id}", response_model=AdminReviewDTO)
+async def admin_update_review_published(
+    review_id: int,
+    body: AdminReviewPublishRequest,
+    _: AdminAuth,
+    session: DbSession,
+):
+    """Publish or hide a guest review."""
+    repo = ReviewRepository(session)
+    promo_repo = PromocodeRepository(session)
+    review = await repo.set_published(review_id, body.isPublished)
+    if not review:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND, detail="Отзыв не найден"
+        )
+
+    booking = await session.scalar(
+        select(BookingBase)
+        .options(selectinload(BookingBase.user))
+        .where(BookingBase.id == review.booking_id)
+    )
+    reward_promo = (
+        await promo_repo.get_by_name(booking.reward_promo_code)
+        if booking and booking.reward_promo_code
+        else None
+    )
+    _log.info(
+        "admin_review_published id=%s isPublished=%s",
+        review_id,
+        body.isPublished,
+    )
+    return _to_admin_review_dto(review, booking, reward_promo)

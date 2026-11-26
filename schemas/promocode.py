@@ -8,6 +8,7 @@ class PromoValidateRequest(BaseModel):
     code: str
     bookingDate: date  # ISO date string "YYYY-MM-DD"
     tariff: str  # frontend tariff ID, e.g. "incognito-daily"
+    contact: Optional[str] = None
 
 
 class PromoValidateResponse(BaseModel):
@@ -16,6 +17,7 @@ class PromoValidateResponse(BaseModel):
     discountPercentage: float
     message: str
     promocodeId: Optional[int] = None
+    isPersonal: bool = False
 
 
 class PromoAdminRead(BaseModel):

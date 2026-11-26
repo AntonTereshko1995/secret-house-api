@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import and_, select
 
-from config import settings
 from db.database import get_session
 from db.models.booking import BookingBase
 from dependencies import TelegramDep
@@ -16,8 +15,14 @@ from repositories.booking_repository import (
     _to_booking_detail,
     _to_minsk_naive,
 )
+from repositories.promocode_repository import (
+    PROMO_USED_MESSAGE,
+    PERSONAL_PROMO_MESSAGE,
+    PromocodeAlreadyUsedError,
+    PromocodePersonalError,
+    PromocodeRepository,
+)
 from schemas.booking import (
-    TARIFF_ID_TO_INT,
     AvailabilityRequest,
     AvailabilityResponse,
     BookedPeriodResponse,
@@ -91,14 +96,27 @@ async def get_my_bookings(
 ):
     repo = BookingRepository(session)
     bookings = await repo.get_bookings_by_contact(contact)
-    return [_to_booking_detail(b) for b in bookings]
+    promo_repo = PromocodeRepository(session)
+    reward_promos = await promo_repo.get_by_names(
+        [b.reward_promo_code for b in bookings if b.reward_promo_code]
+    )
+    return [
+        _to_booking_detail(b, reward_promos.get(b.reward_promo_code))
+        for b in bookings
+    ]
 
 
 @router.get("/{public_id}", response_model=BookingDetailResponse)
 async def get_booking_detail(public_id: UUID, session: DbSession):
     repo = BookingRepository(session)
     booking = await _get_booking_or_404(public_id, repo)
-    return _to_booking_detail(booking)
+    promo_repo = PromocodeRepository(session)
+    reward_promo = (
+        await promo_repo.get_by_name(booking.reward_promo_code)
+        if booking.reward_promo_code
+        else None
+    )
+    return _to_booking_detail(booking, reward_promo)
 
 
 @router.post(
@@ -125,6 +143,18 @@ async def create_booking(
     )
     try:
         booking = await repo.create_booking(body)
+    except PromocodePersonalError as exc:
+        _log.warning("booking_create personal promocode rejected: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=PERSONAL_PROMO_MESSAGE,
+        ) from exc
+    except PromocodeAlreadyUsedError as exc:
+        _log.warning("booking_create used promocode rejected: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=PROMO_USED_MESSAGE,
+        ) from exc
     except Exception as exc:
         _log.exception("booking_create failed: %s", exc)
         raise HTTPException(
