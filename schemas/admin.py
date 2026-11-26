@@ -201,6 +201,7 @@ class AdminStatisticsResponse(BaseModel):
 class AdminReviewDTO(BaseModel):
     reviewId: int
     bookingId: Optional[int] = None
+    bookingPublicId: Optional[str] = None
     contact: Optional[str] = None
     submittedAt: str
     ratingExpectations: int
@@ -214,6 +215,9 @@ class AdminReviewDTO(BaseModel):
     improvement: str
     publicReview: str
     rewardPromoCode: Optional[str] = None
+    rewardPromoStatus: Optional[str] = None
+    isPublished: bool = False
+    publishedAt: Optional[str] = None
 
 
 class AdminReviewsPageResponse(BaseModel):
@@ -221,3 +225,7 @@ class AdminReviewsPageResponse(BaseModel):
     total: int
     page: int
     pageSize: int
+
+
+class AdminReviewPublishRequest(BaseModel):
+    isPublished: bool

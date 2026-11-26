@@ -31,3 +31,16 @@ class ReviewSubmitResponse(BaseModel):
     reviewId: int
     rewardPromoCode: str
     validUntil: date
+
+
+class PublicReviewItem(BaseModel):
+    reviewId: int
+    text: str
+    avgRating: float
+    stayMonth: str
+
+
+class PublicReviewsResponse(BaseModel):
+    items: list[PublicReviewItem]
+    total: int
+    averageRating: float

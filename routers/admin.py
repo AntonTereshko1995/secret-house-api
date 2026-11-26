@@ -33,6 +33,7 @@ from schemas.admin import (
     AdminLoginResponse,
     AdminRescheduleRequest,
     AdminReviewDTO,
+    AdminReviewPublishRequest,
     AdminReviewsPageResponse,
     AdminStatisticsResponse,
     AdminUpdatePriceRequest,
@@ -48,6 +49,7 @@ from schemas.pricing import (
     TariffPriceUpdateRequest,
 )
 from schemas.promocode import PromoAdminRead, PromoCreateRequest
+from services.review_eligibility import today_minsk
 
 _log = logging.getLogger(__name__)
 
@@ -625,9 +627,20 @@ def _to_admin_review_dto(
         r.rating_recommendation,
     ]
     avg = round(sum(ratings) / 6, 1)
+
+    reward_status: str | None = None
+    if booking and booking.promocode:
+        if not booking.promocode.is_active:
+            reward_status = "used"
+        elif booking.promocode.date_to < today_minsk():
+            reward_status = "expired"
+        else:
+            reward_status = "active"
+
     return AdminReviewDTO(
         reviewId=r.id,
         bookingId=r.booking_id,
+        bookingPublicId=str(booking.public_id) if booking else None,
         contact=(booking.user.contact if booking and booking.user else None),
         submittedAt=r.created_at.isoformat(),
         ratingExpectations=r.rating_expectations,
@@ -645,6 +658,9 @@ def _to_admin_review_dto(
             if booking and booking.reward_promo_code
             else None
         ),
+        rewardPromoStatus=reward_status,
+        isPublished=r.is_published,
+        publishedAt=r.published_at.isoformat() if r.published_at else None,
     )
 
 
@@ -654,21 +670,27 @@ async def admin_get_reviews(
     session: DbSession,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
+    published: str = Query(default="all", description="all|true|false"),
 ):
-    """Return paginated guest reviews."""
+    """Return paginated guest reviews, optionally filtered by publish state."""
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
     from repositories.review_repository import ReviewRepository
 
     repo = ReviewRepository(session)
-    reviews, total = await repo.admin_get_all(page=page, page_size=page_size)
+    reviews, total = await repo.admin_get_all(
+        page=page, page_size=page_size, published=published
+    )
 
     bookings: dict[int, BookingBase] = {}
     booking_ids = [r.booking_id for r in reviews]
     if booking_ids:
         rows = await session.scalars(
             select(BookingBase)
-            .options(selectinload(BookingBase.user))
+            .options(
+                selectinload(BookingBase.user),
+                selectinload(BookingBase.promocode),
+            )
             .where(BookingBase.id.in_(booking_ids))
         )
         for b in rows:
@@ -676,3 +698,38 @@ async def admin_get_reviews(
 
     items = [_to_admin_review_dto(r, bookings.get(r.booking_id)) for r in reviews]
     return AdminReviewsPageResponse(items=items, total=total, page=page, pageSize=page_size)
+
+
+@router.patch("/reviews/{review_id}", response_model=AdminReviewDTO)
+async def admin_update_review_published(
+    review_id: int,
+    body: AdminReviewPublishRequest,
+    _: AdminAuth,
+    session: DbSession,
+):
+    """Publish or hide a guest review."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from repositories.review_repository import ReviewRepository
+
+    repo = ReviewRepository(session)
+    review = await repo.set_published(review_id, body.isPublished)
+    if not review:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND, detail="Отзыв не найден"
+        )
+
+    booking = await session.scalar(
+        select(BookingBase)
+        .options(
+            selectinload(BookingBase.user),
+            selectinload(BookingBase.promocode),
+        )
+        .where(BookingBase.id == review.booking_id)
+    )
+    _log.info(
+        "admin_review_published id=%s isPublished=%s",
+        review_id,
+        body.isPublished,
+    )
+    return _to_admin_review_dto(review, booking)

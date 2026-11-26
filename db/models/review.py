@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from db.models.base import Base
-from sqlalchemy import DateTime, ForeignKey, SmallInteger, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, SmallInteger, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 
@@ -26,6 +26,13 @@ class GuestReviewBase(Base):
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
+    )
+
+    is_published: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     def __repr__(self) -> str:

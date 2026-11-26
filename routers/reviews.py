@@ -4,7 +4,7 @@ from datetime import timedelta
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import get_session
@@ -12,7 +12,12 @@ from dependencies import TelegramDep
 from repositories.booking_repository import BookingRepository
 from repositories.promocode_repository import PromocodeRepository
 from repositories.review_repository import ReviewRepository
-from schemas.review import ReviewSubmitRequest, ReviewSubmitResponse
+from schemas.review import (
+    PublicReviewItem,
+    PublicReviewsResponse,
+    ReviewSubmitRequest,
+    ReviewSubmitResponse,
+)
 from services.review_eligibility import review_eligibility, today_minsk
 
 _log = logging.getLogger(__name__)
@@ -27,6 +32,50 @@ BOOKING_NOT_FOUND = "Бронирование не найдено"
 
 def _generate_promo_code() -> str:
     return f"rev{secrets.token_hex(4)}"
+
+
+def _avg_rating(r) -> float:
+    ratings = [
+        r.rating_expectations,
+        r.rating_comfort,
+        r.rating_cleanliness,
+        r.rating_communication,
+        r.rating_location,
+        r.rating_recommendation,
+    ]
+    return round(sum(ratings) / 6, 1)
+
+
+@router.get("/public", response_model=PublicReviewsResponse)
+async def get_public_reviews(
+    session: DbSession,
+    limit: int = Query(default=6, ge=1, le=20),
+):
+    """Public feed of published reviews only (no auth, no contact/name)."""
+    repo = ReviewRepository(session)
+    reviews, bookings = await repo.public_list(limit)
+    total, average_rating = await repo.public_stats()
+
+    items = []
+    for r in reviews:
+        booking = bookings.get(r.booking_id)
+        stay_month = (
+            booking.start_date.strftime("%Y-%m") if booking else None
+        )
+        items.append(
+            PublicReviewItem(
+                reviewId=r.id,
+                text=r.public_review,
+                avgRating=_avg_rating(r),
+                stayMonth=stay_month,
+            )
+        )
+
+    return PublicReviewsResponse(
+        items=items,
+        total=total,
+        averageRating=average_rating,
+    )
 
 
 @router.post(
