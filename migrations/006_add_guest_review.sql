@@ -21,5 +21,14 @@ BEGIN
 
     CREATE UNIQUE INDEX IF NOT EXISTS uq_guest_review_booking_id
         ON guest_review(booking_id);
+
+    -- Reconcile tables created by an earlier WIP version that lacked created_at:
+    -- CREATE TABLE IF NOT EXISTS above does not add columns to an existing table.
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'guest_review' AND column_name = 'created_at'
+    ) THEN
+        ALTER TABLE guest_review ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+    END IF;
 END
 $$;
